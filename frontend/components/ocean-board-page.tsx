@@ -129,18 +129,18 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
     const data = new FormData(form);
     await api(`/content/${selected.id}/comments`, { method: "POST", body: JSON.stringify({ content: data.get("comment") }) });
     form.reset();
-    setSelected(await api<ContentItem>(`/content/${selected.id}`));
+    setSelected(sanitizeItem(await api<ContentItem>(`/content/${selected.id}`)));
   }
 
   async function removeComment(commentId: number) {
     if (!selected || !window.confirm("댓글을 삭제하시겠습니까?")) return;
     await api(`/comments/${commentId}`, { method: "DELETE" });
-    setSelected(await api<ContentItem>(`/content/${selected.id}`));
+    setSelected(sanitizeItem(await api<ContentItem>(`/content/${selected.id}`)));
   }
 
   if (writing) {
     return (
-      <section className="ocean-board-page ocean-board-compose-page">
+      <section className="ocean-board-page ocean-board-compose-page page-content-transition">
         <header className="ocean-compose-heading">
           <button type="button" onClick={() => window.history.back()}><ChevronLeft size={17} />목록으로</button>
           <span>{editing ? "EDIT POST" : "NEW POST"}</span>
@@ -162,7 +162,7 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
   }
 
   return (
-    <section className="ocean-board-page">
+    <section className="ocean-board-page page-content-transition">
       <header className="ocean-board-heading">
         <div><span>{meta.kicker}</span><h2>{meta.title}</h2><p>{meta.description}</p></div>
         <div className="ocean-board-status"><span><strong>{items.length}</strong>개의 게시물</span></div>

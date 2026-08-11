@@ -284,7 +284,7 @@ export function AuthScreen({
             </div>
 
             {contentView === "overview" ? (
-              <section className="overview-page-content overview-architecture-page">
+              <section key="overview" className="overview-page-content overview-architecture-page page-content-transition">
                 <div className="ocean-development-layout overview-architecture-layout">
                   <header className="development-heading overview-architecture-heading">
                     <div><span>PROJECT OVERVIEW · VIDEO BASED</span><h2>관측 영상을<br /><strong>판단 가능한 기록으로</strong></h2></div>
@@ -305,7 +305,7 @@ export function AuthScreen({
                 </div>
               </section>
             ) : contentView === "development" ? (
-              <section className="development-page-content">
+              <section key="development" className="development-page-content page-content-transition">
                 <div className="ocean-development-layout">
                   <header className="development-heading">
                     <div><span>TECHNOLOGY STACK · MVP</span><h2>분석 결과를 만드는<br /><strong>하나의 기술 흐름</strong></h2></div>
@@ -333,12 +333,13 @@ export function AuthScreen({
               </section>
             ) : contentView === "notice" || contentView === "community" || contentView === "faq" ? (
               <OceanBoardPage
+                key={contentView}
                 category={contentView === "community" ? "free" : contentView}
                 user={authenticatedUser}
                 onLogin={handleHeaderLogin}
               />
             ) : (
-            <div className="auth-copy">
+            <div className="auth-copy page-content-transition">
               <h1>AI가 읽어내는 바다</h1>
               <div className="auth-copy-description">
                 <p>드론과 CCTV 영상 속 부유물을 감지해 종류와 위치, 위험도를 실시간으로 분류합니다.</p>

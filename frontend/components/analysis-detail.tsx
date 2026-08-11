@@ -8,18 +8,29 @@ import type { Analysis } from "@/lib/types";
 
 export function AnalysisDetail({ id, onUpdated }: { id: number; onUpdated: () => void }) {
   const [item, setItem] = useState<Analysis | null>(null);
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setItem(null);
+    setLoadError("");
     async function load() {
       const value = await api<Analysis>(`/analyses/${id}`);
-      if (live) setItem(value);
-      if (value.status === "processing" || value.status === "queued") setTimeout(load, 2000);
+      if (!live) return;
+      setItem(value);
+      if (value.status === "processing" || value.status === "queued") timer = setTimeout(load, 2000);
       else onUpdated();
     }
-    load().catch(() => {});
-    return () => { live = false; };
+    load().catch((error) => {
+      if (live) setLoadError(error instanceof Error ? error.message : "분석 정보를 불러오지 못했습니다.");
+    });
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
   }, [id]);
 
+  if (loadError) return <section className="empty-state error-state"><AlertCircle size={32} /><h3>분석 정보를 불러오지 못했습니다.</h3><p>{loadError}</p></section>;
   if (!item) return <div className="detail-loading"><LoaderCircle className="spin" /><span>분석 정보를 불러오는 중</span></div>;
   if (item.status === "failed") return <section className="empty-state error-state"><AlertCircle size={32} /><h3>분석을 완료하지 못했습니다</h3><p>{item.error_message}</p></section>;
   if (item.status !== "completed") return <section className="processing-state"><div className="processing-icon"><ScanSearch size={30} /></div><p className="section-kicker">CPU INFERENCE</p><h2>{item.video.media_type === "image" ? "이미지를" : "동영상을"} 분석하고 있습니다</h2><p>{item.model.name} · {item.video.name}</p><div className="progress-track"><span style={{ width: `${Math.max(item.progress, 2)}%` }} /></div><strong>{item.progress.toFixed(0)}%</strong><small>창을 닫아도 분석은 계속됩니다.</small></section>;

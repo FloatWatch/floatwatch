@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, BarChart3, Box, Check, ChevronDown, ChevronRight, CircleHelp, Clock3, FileText, FileVideo, LogOut, Megaphone,
   Menu, MessageSquareText, Plus, ScanLine, ShieldCheck, UserCircle, Waves, X,
@@ -46,6 +46,7 @@ export function Dashboard({
   const [selectedVideoId, setSelectedVideoId] = useState("");
   const [selectedModelId, setSelectedModelId] = useState("");
   const [error, setError] = useState("");
+  const resultSectionRef = useRef<HTMLElement>(null);
 
   async function refresh() {
     const [modelItems, videoItems, analysisItems, summary] = await Promise.all([
@@ -70,6 +71,13 @@ export function Dashboard({
     return () => clearInterval(timer);
   }, [analyses]);
   useEffect(() => {
+    if (!currentAnalysisId) return;
+    const frame = window.requestAnimationFrame(() => {
+      resultSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentAnalysisId]);
+  useEffect(() => {
     function restoreWorkspaceLocation() {
       const next = new URLSearchParams(window.location.search).get("workspace") as WorkspaceView | null;
       setProfilePanelOpen(false);
@@ -89,6 +97,10 @@ export function Dashboard({
     } catch (err) { setError(err instanceof Error ? err.message : "분석을 시작하지 못했습니다."); }
   }
   async function logout() { await api("/auth/logout", { method: "POST" }).catch(() => {}); onLogout(); }
+  function openUpload(type: "model" | "video") {
+    setOpenPicker(null);
+    setUpload(type);
+  }
   function navigate(next: WorkspaceView) {
     setProfilePanelOpen(false);
     setView(next);
@@ -163,17 +175,17 @@ export function Dashboard({
         <div><p className="section-kicker">{viewTitles[view].kicker}</p><h1>{viewTitles[view].title}</h1></div>
       </header>}
 
-      <div className={isStoryView ? "workspace-body story-workspace-body public-shell public-view-" + view : "workspace-body"}>
+      <div key={`${view}-${viewRevision}`} className={`${isStoryView ? "workspace-body story-workspace-body public-shell public-view-" + view : "workspace-body"} page-content-transition`}>
         {view === "analysis" && <>
           <section className="analysis-upload-workspace"><form onSubmit={start}>
             <div className="analysis-upload-columns">
-              <article><span className="analysis-upload-icon"><FileVideo size={24}/></span><div><p className="section-kicker">INPUT MEDIA</p><h2>분석 미디어</h2><p>부유물을 탐지할 이미지 또는 동영상을 등록하세요.</p></div><button type="button" className="secondary-button" onClick={() => setUpload("video")}><Plus size={16}/>미디어 업로드</button><AnalysisPicker name="video" label="등록된 미디어" placeholder="분석할 미디어 선택" icon={<FileVideo size={18}/>} value={selectedVideoId} open={openPicker === "video"} onOpen={() => setOpenPicker(openPicker === "video" ? null : "video")} onClose={() => setOpenPicker(null)} onChange={setSelectedVideoId} options={videos.map((item) => ({ value: String(item.id), label: item.name, meta: item.media_type === "image" ? "이미지" : "동영상" }))}/></article>
-              <article><span className="analysis-upload-icon"><Box size={24}/></span><div><p className="section-kicker">AI MODEL</p><h2>탐지 모델</h2><p>YOLOv8 또는 YOLO11 기반 PT 모델을 등록하세요.</p></div><button type="button" className="secondary-button" onClick={() => setUpload("model")}><Plus size={16}/>AI 모델 업로드</button><AnalysisPicker name="model" label="등록된 모델" placeholder="적용할 PT 모델 선택" icon={<Box size={18}/>} value={selectedModelId} open={openPicker === "model"} onOpen={() => setOpenPicker(openPicker === "model" ? null : "model")} onClose={() => setOpenPicker(null)} onChange={setSelectedModelId} options={models.map((item) => ({ value: String(item.id), label: item.name, meta: "YOLO PT 모델" }))}/></article>
+              <article><span className="analysis-upload-icon"><FileVideo size={24}/></span><div><p className="section-kicker">INPUT MEDIA</p><h2>분석 미디어</h2><p>부유물을 탐지할 이미지 또는 동영상을 등록하세요.</p></div><button type="button" className="secondary-button" aria-haspopup="dialog" onClick={() => openUpload("video")}><Plus size={16}/>미디어 업로드</button><AnalysisPicker name="video" label="등록된 미디어" placeholder="분석할 미디어 선택" icon={<FileVideo size={18}/>} value={selectedVideoId} open={openPicker === "video"} onOpen={() => setOpenPicker(openPicker === "video" ? null : "video")} onClose={() => setOpenPicker(null)} onChange={setSelectedVideoId} options={videos.map((item) => ({ value: String(item.id), label: item.name, meta: item.media_type === "image" ? "이미지" : "동영상" }))}/></article>
+              <article><span className="analysis-upload-icon"><Box size={24}/></span><div><p className="section-kicker">AI MODEL</p><h2>탐지 모델</h2><p>YOLOv8 또는 YOLO11 기반 PT 모델을 등록하세요.</p></div><button type="button" className="secondary-button" aria-haspopup="dialog" onClick={() => openUpload("model")}><Plus size={16}/>AI 모델 업로드</button><AnalysisPicker name="model" label="등록된 모델" placeholder="적용할 PT 모델 선택" icon={<Box size={18}/>} value={selectedModelId} open={openPicker === "model"} onOpen={() => setOpenPicker(openPicker === "model" ? null : "model")} onClose={() => setOpenPicker(null)} onChange={setSelectedModelId} options={models.map((item) => ({ value: String(item.id), label: item.name, meta: "YOLO PT 모델" }))}/></article>
             </div>
             <input type="hidden" name="confidence" value="0.25"/><input type="hidden" name="stride" value="3"/>
             <div className="analysis-run"><p>{models.length && videos.length ? "미디어와 모델을 선택하면 분석을 시작할 수 있습니다." : "미디어와 AI 모델을 각각 한 개 이상 업로드하세요."}</p><button className="primary-button" disabled={!selectedModelId || !selectedVideoId}><ScanLine size={18}/>분석 시작</button></div>
           </form>{error && <p className="form-error">{error}</p>}</section>
-          {currentAnalysisId && <section className="analysis-inline-result"><AnalysisDetail id={currentAnalysisId} onUpdated={refresh}/></section>}
+          {currentAnalysisId && <section ref={resultSectionRef} className="analysis-inline-result" aria-live="polite"><AnalysisDetail id={currentAnalysisId} onUpdated={refresh}/></section>}
         </>}
 
         {view === "records" && <div className="content-layout records-layout"><section className="history-panel panel"><div className="panel-heading"><div><p className="section-kicker">MY OBSERVATIONS</p><h3>탐색 목록</h3></div><span>{analyses.length}</span></div><div className="history-list">{analyses.map((item) => <button key={item.id} className={selected === item.id ? "history-item selected" : "history-item"} onClick={() => setSelected(item.id)}><span className={`run-icon ${item.status}`}><ScanLine size={18}/></span><div><strong>{item.video.name}</strong><small>{item.model.name} · {formatDate(item.created_at)}</small><Status status={item.status} progress={item.progress}/></div><ChevronRight size={17}/></button>)}{!analyses.length && <div className="empty-compact"><ScanLine size={26}/><strong>첫 탐색을 시작해보세요.</strong><p>완료된 분석이 시간순으로 정리됩니다.</p></div>}</div></section><section className="detail-panel">{selected ? <AnalysisDetail id={selected} onUpdated={refresh}/> : <div className="empty-state"><ScanLine size={34}/><p className="section-kicker">NO OBSERVATION YET</p><h3>아직 저장된 탐색 결과가 없습니다.</h3><p>이미지 또는 동영상과 PT 모델을 연결하면 탐지 결과와 클래스 통계가 이곳에 기록됩니다.</p><button className="secondary-button" onClick={() => navigate("analysis")}>분석 시작<ChevronRight size={16}/></button></div>}</section></div>}

@@ -1,17 +1,23 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { FileUp, LoaderCircle, Upload, X } from "lucide-react";
 import { api } from "@/lib/api";
 
 type Props = { type: "model" | "video"; onClose: () => void; onUploaded: () => void };
 
 export function UploadDialog({ type, onClose, onUploaded }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const isModel = type === "model";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,7 +39,9 @@ export function UploadDialog({ type, onClose, onUploaded }: Props) {
     }
   }
 
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+  if (!mounted) return null;
+
+  return createPortal(<div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <div className="modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header><div><p className="section-kicker">새 자산 등록</p><h2>{isModel ? "YOLO 모델 업로드" : "이미지·동영상 업로드"}</h2></div><button className="icon-button" title="닫기" onClick={onClose}><X size={20} /></button></header>
       <form onSubmit={submit} className="form-stack">
@@ -47,7 +55,7 @@ export function UploadDialog({ type, onClose, onUploaded }: Props) {
         <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>취소</button><button className="primary-button" disabled={!file || busy}>{busy && <LoaderCircle className="spin" size={17} />}업로드</button></div>
       </form>
     </div>
-  </div>;
+  </div>, document.body);
 }
 
 function formatBytes(bytes: number) {

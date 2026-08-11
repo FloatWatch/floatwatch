@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import secrets
 import urllib.parse
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
-from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import delete, func, select, text
@@ -27,22 +30,29 @@ from .security import hash_password, new_session_token, token_digest, verify_pas
 MAX_MODEL_SIZE = 500 * 1024 * 1024
 MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024
 MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024
+USER_STORAGE_LIMIT = int(os.getenv("USER_STORAGE_LIMIT_BYTES", str(5 * 1024 * 1024 * 1024)))
+MAX_VIDEO_DURATION_SECONDS = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "3600"))
+MAX_MEDIA_PIXELS = int(os.getenv("MAX_MEDIA_PIXELS", str(3840 * 2160)))
 COOKIE_NAME = "floatwatch_session"
 OAUTH_STATE_COOKIE = "floatwatch_oauth_state"
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").rstrip("/")
-
-app = FastAPI(title="FloatWatch API", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+logger = logging.getLogger("floatwatch")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
+analysis_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="floatwatch-analysis")
 
 
-@app.on_event("startup")
-def startup() -> None:
+def _analysis_done(analysis_id: int, future: Future[None]) -> None:
+    try:
+        future.result()
+    except Exception:
+        logger.exception("analysis worker crashed", extra={"analysis_id": analysis_id})
+
+
+def enqueue_analysis(analysis_id: int) -> None:
+    future = analysis_executor.submit(run_analysis, analysis_id)
+    future.add_done_callback(lambda result: _analysis_done(analysis_id, result))
+
+def initialize_app() -> list[int]:
     Base.metadata.create_all(engine)
     with engine.begin() as connection:
         columns = {row[1] for row in connection.execute(text("PRAGMA table_info(users)"))}
@@ -54,6 +64,13 @@ def startup() -> None:
         (STORAGE_DIR / folder).mkdir(parents=True, exist_ok=True)
     db = SessionLocal()
     try:
+        db.execute(delete(Session).where(Session.expires_at <= datetime.now(timezone.utc)))
+        stale = db.scalars(select(Analysis).where(Analysis.status == "processing")).all()
+        for item in stale:
+            item.status = "failed"
+            item.error_message = "서버가 재시작되어 분석이 중단되었습니다. 다시 분석해 주세요."
+            item.completed_at = datetime.now(timezone.utc)
+        queued_ids = list(db.scalars(select(Analysis.id).where(Analysis.status == "queued").order_by(Analysis.id.asc())).all())
         if not db.scalar(select(func.count(User.id)).where(User.role == "admin")):
             first_user = db.scalar(select(User).order_by(User.id.asc()).limit(1))
             if first_user:
@@ -123,8 +140,29 @@ def startup() -> None:
                 existing.add(title)
                 count += 1
         db.commit()
+        return queued_ids
     finally:
         db.close()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    for analysis_id in initialize_app():
+        enqueue_analysis(analysis_id)
+    try:
+        yield
+    finally:
+        analysis_executor.shutdown(wait=False, cancel_futures=True)
+
+
+app = FastAPI(title="FloatWatch API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[FRONTEND_ORIGIN],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_db():
@@ -184,7 +222,28 @@ async def save_upload(upload: UploadFile, target: Path, max_bytes: int) -> int:
     except Exception:
         target.unlink(missing_ok=True)
         raise
+    if size == 0:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, "빈 파일은 업로드할 수 없습니다.")
     return size
+
+
+def remaining_user_storage(db: DbSession, user_id: int) -> int:
+    model_bytes = db.scalar(select(func.coalesce(func.sum(ModelArtifact.size_bytes), 0)).where(ModelArtifact.user_id == user_id)) or 0
+    media_bytes = db.scalar(select(func.coalesce(func.sum(VideoAsset.size_bytes), 0)).where(VideoAsset.user_id == user_id)) or 0
+    return max(0, USER_STORAGE_LIMIT - int(model_bytes) - int(media_bytes))
+
+
+def upload_limit(db: DbSession, user_id: int, per_file_limit: int) -> int:
+    remaining = remaining_user_storage(db, user_id)
+    if remaining <= 0:
+        raise HTTPException(413, "사용자 저장공간 한도를 초과했습니다. 기존 파일을 삭제해 주세요.")
+    return min(per_file_limit, remaining)
+
+
+def delete_analysis_files(item: Analysis) -> None:
+    if item.output_path:
+        Path(item.output_path).unlink(missing_ok=True)
 
 
 def model_json(item: ModelArtifact) -> dict:
@@ -383,6 +442,8 @@ def delete_content(content_id: int, user: User = Depends(current_user), db: DbSe
         raise HTTPException(404, "게시글을 찾을 수 없습니다.")
     if user.role != "admin" and item.author_id != user.id:
         raise HTTPException(403, "게시글을 삭제할 권한이 없습니다.")
+    for attachment in item.attachments:
+        (STORAGE_DIR / "attachments" / attachment.stored_name).unlink(missing_ok=True)
     db.delete(item)
     db.commit()
     return Response(status_code=204)
@@ -479,8 +540,9 @@ def admin_delete_analysis(analysis_id: int, _admin: User = Depends(admin_user), 
     item = db.get(Analysis, analysis_id)
     if not item:
         raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
-    if item.output_path:
-        Path(item.output_path).unlink(missing_ok=True)
+    if item.status in {"queued", "processing"}:
+        raise HTTPException(409, "진행 중인 분석은 삭제할 수 없습니다.")
+    delete_analysis_files(item)
     db.delete(item)
     db.commit()
     return Response(status_code=204)
@@ -505,9 +567,9 @@ def login(body: LoginBody, response: Response, db: DbSession = Depends(get_db)) 
     user = db.scalar(select(User).where(User.email == body.email.lower()))
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "이메일 또는 비밀번호가 올바르지 않습니다.")
-    set_session_cookie(response, db, user)
     if not user.active:
         raise HTTPException(403, "비활성화된 계정입니다.")
+    set_session_cookie(response, db, user)
     return {"id": user.id, "name": user.name, "email": user.email, "role": user.role}
 
 
@@ -623,13 +685,33 @@ async def upload_model(
 ) -> dict:
     if Path(file.filename or "").suffix.lower() != ".pt":
         raise HTTPException(400, ".pt 모델 파일만 업로드할 수 있습니다.")
+    model_name = name.strip()[:120]
+    if not model_name:
+        raise HTTPException(400, "모델 이름을 입력해 주세요.")
     target = STORAGE_DIR / "models" / str(user.id) / f"{uuid.uuid4().hex}.pt"
-    size = await save_upload(file, target, MAX_MODEL_SIZE)
-    item = ModelArtifact(user_id=user.id, name=name.strip()[:120], original_name=file.filename or "model.pt", path=str(target), size_bytes=size)
+    size = await save_upload(file, target, upload_limit(db, user.id, MAX_MODEL_SIZE))
+    if size < 1024:
+        target.unlink(missing_ok=True)
+        raise HTTPException(400, "유효한 PT 모델 파일인지 확인해 주세요.")
+    item = ModelArtifact(user_id=user.id, name=model_name, original_name=file.filename or "model.pt", path=str(target), size_bytes=size)
     db.add(item)
     db.commit()
     db.refresh(item)
+    logger.info("event=model_uploaded user_id=%s model_id=%s size_bytes=%s", user.id, item.id, size)
     return model_json(item)
+
+
+@app.delete("/models/{model_id}", status_code=204)
+def delete_model(model_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> Response:
+    item = db.scalar(select(ModelArtifact).where(ModelArtifact.id == model_id, ModelArtifact.user_id == user.id))
+    if not item:
+        raise HTTPException(404, "모델을 찾을 수 없습니다.")
+    if db.scalar(select(func.count(Analysis.id)).where(Analysis.model_id == item.id)):
+        raise HTTPException(409, "분석 기록에서 사용 중인 모델은 삭제할 수 없습니다.")
+    Path(item.path).unlink(missing_ok=True)
+    db.delete(item)
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.get("/videos")
@@ -648,19 +730,53 @@ async def upload_video(
     if suffix not in {".mp4", ".avi", ".mov", ".mkv", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
         raise HTTPException(400, "지원하지 않는 이미지 또는 동영상 형식입니다.")
     target = STORAGE_DIR / "videos" / str(user.id) / f"{uuid.uuid4().hex}{suffix}"
-    size = await save_upload(file, target, MAX_VIDEO_SIZE)
+    size = await save_upload(file, target, upload_limit(db, user.id, MAX_VIDEO_SIZE))
     fps = frame_count = duration = None
     if suffix in {".mp4", ".avi", ".mov", ".mkv", ".webm"}:
         capture = cv2.VideoCapture(str(target))
+        if not capture.isOpened():
+            capture.release()
+            target.unlink(missing_ok=True)
+            raise HTTPException(400, "동영상 파일을 읽을 수 없습니다.")
         fps = capture.get(cv2.CAP_PROP_FPS) or None
         frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT)) or None
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration = frame_count / fps if frame_count and fps else None
         capture.release()
+        if width <= 0 or height <= 0 or width * height > MAX_MEDIA_PIXELS:
+            target.unlink(missing_ok=True)
+            raise HTTPException(400, "지원 해상도를 초과했거나 영상 크기가 올바르지 않습니다.")
+        if duration and duration > MAX_VIDEO_DURATION_SECONDS:
+            target.unlink(missing_ok=True)
+            raise HTTPException(400, "분석 가능한 영상 길이를 초과했습니다.")
+    else:
+        image = cv2.imread(str(target))
+        if image is None:
+            target.unlink(missing_ok=True)
+            raise HTTPException(400, "이미지 파일을 읽을 수 없습니다.")
+        if image.shape[0] * image.shape[1] > MAX_MEDIA_PIXELS:
+            target.unlink(missing_ok=True)
+            raise HTTPException(400, "지원 이미지 해상도를 초과했습니다.")
     item = VideoAsset(user_id=user.id, name=file.filename or "video", path=str(target), size_bytes=size, fps=fps, frame_count=frame_count, duration_seconds=duration)
     db.add(item)
     db.commit()
     db.refresh(item)
+    logger.info("event=media_uploaded user_id=%s media_id=%s size_bytes=%s", user.id, item.id, size)
     return video_json(item)
+
+
+@app.delete("/videos/{video_id}", status_code=204)
+def delete_video(video_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> Response:
+    item = db.scalar(select(VideoAsset).where(VideoAsset.id == video_id, VideoAsset.user_id == user.id))
+    if not item:
+        raise HTTPException(404, "미디어를 찾을 수 없습니다.")
+    if db.scalar(select(func.count(Analysis.id)).where(Analysis.video_id == item.id)):
+        raise HTTPException(409, "분석 기록에서 사용 중인 미디어는 삭제할 수 없습니다.")
+    Path(item.path).unlink(missing_ok=True)
+    db.delete(item)
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.get("/analyses")
@@ -672,7 +788,6 @@ def list_analyses(user: User = Depends(current_user), db: DbSession = Depends(ge
 @app.post("/analyses", status_code=202)
 def create_analysis(
     body: AnalysisCreate,
-    background_tasks: BackgroundTasks,
     user: User = Depends(current_user),
     db: DbSession = Depends(get_db),
 ) -> dict:
@@ -684,8 +799,22 @@ def create_analysis(
     db.add(item)
     db.commit()
     db.refresh(item)
-    background_tasks.add_task(run_analysis, item.id)
+    logger.info("event=analysis_queued user_id=%s analysis_id=%s model_id=%s media_id=%s", user.id, item.id, model.id, video.id)
+    enqueue_analysis(item.id)
     return analysis_json(item)
+
+
+@app.delete("/analyses/{analysis_id}", status_code=204)
+def delete_analysis(analysis_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> Response:
+    item = db.scalar(select(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user.id))
+    if not item:
+        raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
+    if item.status in {"queued", "processing"}:
+        raise HTTPException(409, "진행 중인 분석은 삭제할 수 없습니다.")
+    delete_analysis_files(item)
+    db.delete(item)
+    db.commit()
+    return Response(status_code=204)
 
 
 @app.get("/analyses/{analysis_id}")
