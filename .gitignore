@@ -216,3 +216,44 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# FloatWatch frontend
+node_modules/
+.next/
+coverage/
+*.tsbuildinfo
+!frontend/lib/
+!frontend/lib/**
+
+# Environment examples remain public; actual values stay local
+.env.*
+!.env.example
+!.env.local.example
+
+# Runtime data, logs, uploads and generated outputs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+backend/data/
+backend/storage/
+tmp/
+temp/
+
+# AI weights, source media and archives
+*.pt
+*.onnx
+*.h5
+*.keras
+*.mp4
+*.avi
+*.mov
+*.zip
+*.bak
+*.backup
+
+# OS and local-only working instructions
+.DS_Store
+Thumbs.db
+AGENTS.md
+.local-guides/
