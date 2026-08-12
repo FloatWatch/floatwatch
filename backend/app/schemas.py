@@ -14,7 +14,16 @@ class LoginBody(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=80)
-    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class AccountDelete(BaseModel):
+    confirmation: str
+    current_password: str | None = Field(default=None, max_length=128)
 
 
 class AnalysisCreate(BaseModel):
@@ -48,11 +57,13 @@ class InquiryCreate(BaseModel):
 
 class InquiryAnswer(BaseModel):
     answer: str = Field(min_length=2, max_length=10000)
+    reason: str = Field(default="문의 답변 처리", min_length=2, max_length=500)
 
 
 class UserAdminUpdate(BaseModel):
     role: str | None = Field(default=None, pattern="^(user|admin)$")
     active: bool | None = None
+    reason: str = Field(min_length=2, max_length=500)
 
 
 class OrmModel(BaseModel):

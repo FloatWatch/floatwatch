@@ -24,6 +24,24 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_name: Mapped[str] = mapped_column(String(80))
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    target_type: Mapped[str] = mapped_column(String(40), index=True)
+    target_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    target_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    before_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, index=True)
+
+    actor: Mapped[User | None] = relationship()
+
+
 class Session(Base):
     __tablename__ = "sessions"
 
@@ -55,6 +73,9 @@ class ModelArtifact(Base):
     size_bytes: Mapped[int] = mapped_column(Integer)
     task: Mapped[str | None] = mapped_column(String(40), nullable=True)
     class_names_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quarantined: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    quarantine_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
@@ -176,6 +197,7 @@ class Inquiry(Base):
     status: Mapped[str] = mapped_column(String(20), default="waiting")
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    answer_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
     user: Mapped[User] = relationship()

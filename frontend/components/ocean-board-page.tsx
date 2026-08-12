@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronLeft, ChevronRight, Download, Italic, LoaderCircle, Paperclip, PenLine, Pencil, Send, Star, Trash2, Underline } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronLeft, ChevronRight, Download, Italic, LoaderCircle, Paperclip, PenLine, Pencil, Search, Send, Star, Trash2, Underline, X } from "lucide-react";
 import { API_URL, api } from "@/lib/api";
 import type { ContentItem, User } from "@/lib/types";
 
@@ -21,16 +21,20 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const meta = boardMeta[category];
   const isAdmin = user?.role === "admin";
   const canWrite = category === "free" ? Boolean(user) : isAdmin;
   const pageCount = Math.max(1, Math.ceil(items.length / 10));
   const pageItems = items.slice((page - 1) * 10, page * 10);
 
-  async function load() {
+  async function load(keyword = appliedSearch) {
     setLoading(true);
     try {
-      const loaded = (await api<ContentItem[]>(`/content?category=${category}`)).map(sanitizeItem);
+      const query = new URLSearchParams({ category });
+      if (keyword) query.set("q", keyword);
+      const loaded = (await api<ContentItem[]>(`/content?${query}`)).map(sanitizeItem);
       setItems(loaded.sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime() || b.id - a.id));
     }
     finally { setLoading(false); }
@@ -42,8 +46,27 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
     setWriting(false);
     setEditing(null);
     setPage(1);
-    load();
+    setSearch("");
+    setAppliedSearch("");
+    load("");
   }, [category]);
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const keyword = search.trim();
+    setAppliedSearch(keyword);
+    setPage(1);
+    setOpenFaq(null);
+    load(keyword);
+  }
+
+  function clearSearch() {
+    setSearch("");
+    setAppliedSearch("");
+    setPage(1);
+    setOpenFaq(null);
+    load("");
+  }
 
   useEffect(() => {
     function restoreBoardLocation() {
@@ -169,6 +192,12 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
       </header>
 
       <div className="ocean-board-content">
+        {!selected && <form className="ocean-board-search" role="search" onSubmit={submitSearch}>
+          <Search size={16} />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} maxLength={100} aria-label={`${meta.title} 검색`} placeholder="제목 또는 내용 검색" />
+          {search && <button type="button" className="clear" onClick={clearSearch} aria-label="검색어 지우기"><X size={15} /></button>}
+          <button type="submit">검색</button>
+        </form>}
         {category === "faq" ? (
           <div className="ocean-faq-list">
             {pageItems.map((item, index) => (
@@ -189,7 +218,7 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
             <div className="ocean-reader-body" dangerouslySetInnerHTML={{ __html: selected.content }} />
             {selected.attachments?.length > 0 && <div className="ocean-reader-files"><strong><Paperclip size={14} />첨부파일</strong>{selected.attachments.map((file) => <AttachmentLink file={file} key={file.id} />)}</div>}
             {category === "free" && <section className="ocean-comments"><header><strong>댓글</strong><span>{selected.comments?.length ?? 0}</span></header><form onSubmit={submitComment}><input name="comment" required maxLength={2000} placeholder={user ? "댓글을 입력하세요" : "로그인 후 댓글을 작성할 수 있습니다"} /><button type="submit"><Send size={15} />등록</button></form><div>{selected.comments?.map((comment) => <article key={comment.id}><div><strong>{comment.author?.name ?? "탈퇴한 회원"}</strong><time>{formatDateTime(comment.created_at)}</time></div><p>{comment.content}</p>{(isAdmin || comment.author?.id === user?.id) && <button type="button" onClick={() => removeComment(comment.id)}><Trash2 size={13} />삭제</button>}</article>)}{!selected.comments?.length && <p className="ocean-comments-empty">첫 댓글을 남겨보세요.</p>}</div></section>}
-            {isAdmin && <AdminActions showPin={category === "notice"} pinned={selected.pinned} onPin={() => togglePinned(selected)} onEdit={() => startEdit(selected)} onDelete={() => remove(selected)} />}
+            {(isAdmin || (category === "free" && selected.author?.id === user?.id)) && <AdminActions showPin={isAdmin && category === "notice"} pinned={selected.pinned} onPin={() => togglePinned(selected)} onEdit={() => startEdit(selected)} onDelete={() => remove(selected)} />}
           </article>
         ) : (
           <div className="ocean-board-list">

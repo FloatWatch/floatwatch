@@ -36,9 +36,11 @@ export function Dashboard({
   const [upload, setUpload] = useState<"model" | "video" | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [profilePanelClosing, setProfilePanelClosing] = useState(false);
   const [profileEditing, setProfileEditing] = useState(false);
-  const [profileName, setProfileName] = useState(user.name);
+  const [profileCurrentPassword, setProfileCurrentPassword] = useState("");
   const [profilePassword, setProfilePassword] = useState("");
+  const [profileDeleteConfirmation, setProfileDeleteConfirmation] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
   const [profileBusy, setProfileBusy] = useState(false);
   const [openMenu, setOpenMenu] = useState<"project" | "analysis" | "board" | null>(null);
@@ -112,21 +114,39 @@ export function Dashboard({
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
   function openMyPage() {
+    setProfilePanelClosing(false);
     setProfilePanelOpen(true);
     setProfileMessage("");
     window.history.replaceState({ workspace: view, profile: true }, "", `/auth?workspace=${view}&profile=1`);
   }
   function closeMyPage() {
-    setProfilePanelOpen(false);
-    setProfileEditing(false);
     window.history.replaceState({ workspace: view }, "", `/auth?workspace=${view}`);
+    if (profilePanelClosing) return;
+    setProfilePanelClosing(true);
+    window.setTimeout(() => {
+      setProfilePanelOpen(false);
+      setProfilePanelClosing(false);
+      setProfileEditing(false);
+    }, 360);
   }
   async function updateProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setProfileBusy(true); setProfileMessage("");
     try {
-      const updated = await api<User>("/auth/me", { method: "PATCH", body: JSON.stringify({ name: profileName.trim(), password: profilePassword || undefined }) });
-      onUserUpdated(updated); setProfilePassword(""); setProfileEditing(false); setProfileMessage("개인 정보가 변경되었습니다.");
+      await api<void>("/auth/me/password", { method: "PATCH", body: JSON.stringify({ current_password: profileCurrentPassword, new_password: profilePassword }) });
+      onLogout();
     } catch (err) { setProfileMessage(err instanceof Error ? err.message : "개인 정보를 변경하지 못했습니다."); }
+    finally { setProfileBusy(false); }
+  }
+  async function deleteAccount() {
+    if (profileDeleteConfirmation !== "회원 탈퇴") {
+      setProfileMessage("확인란에 '회원 탈퇴'를 정확히 입력해 주세요.");
+      return;
+    }
+    setProfileBusy(true); setProfileMessage("");
+    try {
+      await api<void>("/auth/me", { method: "DELETE", body: JSON.stringify({ confirmation: profileDeleteConfirmation, current_password: profileCurrentPassword || undefined }) });
+      onLogout();
+    } catch (err) { setProfileMessage(err instanceof Error ? err.message : "회원 탈퇴를 처리하지 못했습니다."); }
     finally { setProfileBusy(false); }
   }
   if (view === "home" || view === "overview" || view === "development" || view === "notice" || view === "free" || view === "faq") {
@@ -196,16 +216,16 @@ export function Dashboard({
     </div>
     </section>
     </main>
-    {profilePanelOpen && <><button className="analysis-profile-backdrop" type="button" aria-label="마이페이지 닫기" onClick={closeMyPage}/><aside className="auth-panel analysis-profile-drawer" aria-label="마이페이지">
+    {profilePanelOpen && <><button className={`analysis-profile-backdrop ${profilePanelClosing ? "is-closing" : ""}`} type="button" aria-label="마이페이지 닫기" onClick={closeMyPage}/><aside className={`auth-panel analysis-profile-drawer ${profilePanelClosing ? "is-closing" : ""}`} aria-label="마이페이지">
       <div className="auth-form-wrap"><div className="profile-panel-content">
-        <div className="auth-form-backline-wrap"><button className="auth-form-backline" type="button" onClick={closeMyPage} aria-label="마이페이지 닫기"><ArrowLeft size={16}/></button></div>
-        <div className="auth-form-heading"><span className="auth-lock"><UserCircle size={19}/></span><div><p className="section-kicker">MY FLOATWATCH</p><h2>마이페이지</h2></div></div>
-        <div className="profile-identity"><span>{user.name.slice(0, 1)}</span><div><small>다시 만나 반갑습니다</small><strong>{user.name}님</strong><p>{user.email}</p></div>{user.role === "admin" ? <button className="profile-admin-badge" type="button" onClick={() => navigate("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11}/>관리자</button> : <em><ShieldCheck size={11}/>일반 회원</em>}</div>
+        <div className="auth-form-backline-wrap"><button className="auth-form-backline" type="button" onClick={() => { if (profileEditing) { setProfileEditing(false); setProfileCurrentPassword(""); setProfilePassword(""); setProfileDeleteConfirmation(""); setProfileMessage(""); } else closeMyPage(); }} aria-label={profileEditing ? "마이페이지로 돌아가기" : "마이페이지 닫기"}><ArrowLeft size={16}/></button></div>
+        <div className="auth-form-heading"><span className="auth-lock"><UserCircle size={19}/></span><div><p className="section-kicker">{profileEditing ? "ACCOUNT SETTINGS" : "MY FLOATWATCH"}</p><h2>{profileEditing ? "개인정보 관리" : "마이페이지"}</h2></div></div>
+        {!profileEditing && <div className="profile-view-enter"><div className="profile-identity"><span>{user.name.slice(0, 1)}</span><div><small>다시 만나 반갑습니다</small><strong>{user.name}님</strong><p>{user.email}</p></div>{user.role === "admin" ? <button className="profile-admin-badge" type="button" onClick={() => navigate("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11}/>관리자</button> : <em><ShieldCheck size={11}/>일반 회원</em>}</div>
         <div className="profile-activity"><div><small>분석 기록</small><strong>{analyses.length}<em>건</em></strong></div><div><small>1:1 문의</small><strong>{inquiryCount}<em>건</em></strong></div></div>
-        <p className="profile-section-label">나의 서비스</p>
-        {profileEditing ? <form className="profile-edit-form" onSubmit={updateProfile}><label><span>이름</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} minLength={2} required/></label><label><span>새 비밀번호</span><input type="password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)} minLength={8} placeholder="변경하지 않으려면 비워두세요"/></label><div><button type="button" onClick={() => setProfileEditing(false)}>취소</button><button type="submit" disabled={profileBusy}>{profileBusy ? "저장 중..." : "변경 저장"}</button></div></form> : <div className="profile-shortcuts"><button type="button" onClick={() => setProfileEditing(true)}><UserCircle size={18}/><span><strong>개인 정보 관리</strong><small>이름 및 비밀번호 변경</small></span><ChevronRight size={16}/></button><button type="button" onClick={() => navigate("records")}><ScanLine size={18}/><span><strong>내 탐색 기록</strong><small>분석 결과와 탐지 기록 확인</small></span><ChevronRight size={16}/></button><button type="button" onClick={() => navigate("inquiry")}><FileText size={18}/><span><strong>1:1 문의</strong><small>문의 작성 및 답변 확인</small></span><ChevronRight size={16}/></button></div>}
+        <p className="profile-section-label">나의 서비스</p><div className="profile-shortcuts"><button type="button" onClick={() => setProfileEditing(true)}><UserCircle size={18}/><span><strong>개인 정보 관리</strong><small>비밀번호 및 계정 관리</small></span><ChevronRight size={16}/></button><button type="button" onClick={() => navigate("records")}><ScanLine size={18}/><span><strong>내 탐색 기록</strong><small>분석 결과와 탐지 기록 확인</small></span><ChevronRight size={16}/></button><button type="button" onClick={() => navigate("inquiry")}><FileText size={18}/><span><strong>1:1 문의</strong><small>문의 작성 및 답변 확인</small></span><ChevronRight size={16}/></button></div></div>}
+        {profileEditing && <form className="profile-edit-form profile-settings-view profile-view-enter" onSubmit={updateProfile}><div className="profile-settings-intro"><strong>비밀번호 변경</strong><p>현재 비밀번호를 확인한 뒤 새로운 비밀번호로 변경합니다.</p></div>{user.auth_provider === "password" || !user.auth_provider ? <><label><span>현재 비밀번호</span><input type="password" value={profileCurrentPassword} onChange={(event) => setProfileCurrentPassword(event.target.value)} required placeholder="현재 비밀번호"/></label><label><span>새 비밀번호</span><input type="password" value={profilePassword} onChange={(event) => setProfilePassword(event.target.value)} minLength={8} required placeholder="8자 이상 입력"/></label><div className="profile-settings-actions"><button type="button" onClick={() => { setProfileEditing(false); setProfileCurrentPassword(""); setProfilePassword(""); setProfileDeleteConfirmation(""); }}>취소</button><button type="submit" disabled={profileBusy}>{profileBusy ? "처리 중..." : "비밀번호 변경"}</button></div></> : <p className="profile-account-note">소셜 로그인으로 가입한 계정은 FloatWatch에서 비밀번호를 변경할 수 없습니다. {user.auth_provider} 계정에서 비밀번호를 관리해 주세요.</p>}<section className="profile-danger-zone"><div><strong>회원 탈퇴</strong><p>탈퇴하면 분석 기록과 업로드 파일이 함께 삭제됩니다.</p></div><label><span>탈퇴 확인</span><input value={profileDeleteConfirmation} onChange={(event) => setProfileDeleteConfirmation(event.target.value)} placeholder="'회원 탈퇴' 입력"/></label><button type="button" className="profile-delete-account" disabled={profileBusy} onClick={deleteAccount}>회원 탈퇴</button></section></form>}
         {profileMessage && <p className="profile-message">{profileMessage}</p>}
-        <button className="profile-logout" type="button" onClick={logout}><LogOut size={16}/>로그아웃</button>
+        {!profileEditing && <button className="profile-logout" type="button" onClick={logout}><LogOut size={16}/>로그아웃</button>}
       </div></div>
     </aside></>}
     {upload && <UploadDialog type={upload} onClose={() => setUpload(null)} onUploaded={refresh}/>}

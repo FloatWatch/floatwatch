@@ -1,4 +1,10 @@
-export type User = { id: number; name: string; email: string; role: "user" | "admin" };
+export type User = {
+  id: number;
+  name: string;
+  email: string;
+  role: "user" | "admin";
+  auth_provider?: "password" | "kakao" | "naver" | "google";
+};
 
 export type ContentItem = {
   id: number;
@@ -21,12 +27,27 @@ export type Inquiry = {
   status: "waiting" | "answered";
   answer: string | null;
   answered_at: string | null;
+  answer_read_at: string | null;
+  has_new_answer: boolean;
   created_at: string;
   user: { id: number; name: string; email: string };
   attachments: { id: number; name: string; size_bytes: number; url: string }[];
 };
 
 export type AdminUser = User & { active: boolean; created_at: string };
+
+export type AuditLog = {
+  id: number;
+  actor: { id: number | null; name: string };
+  action: "user.update" | "analysis.delete" | "content.update" | "content.delete" | "inquiry.answer";
+  target_type: "user" | "analysis" | "content" | "inquiry";
+  target_id: string | null;
+  target_label: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  reason: string;
+  created_at: string;
+};
 
 export type ModelArtifact = {
   id: number;
@@ -35,6 +56,9 @@ export type ModelArtifact = {
   size_bytes: number;
   task: string | null;
   class_names: string[];
+  quarantined?: boolean;
+  quarantine_reason?: string | null;
+  quarantined_at?: string | null;
   created_at: string;
 };
 

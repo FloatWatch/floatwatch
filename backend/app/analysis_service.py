@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import json
+import shutil
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -10,8 +11,30 @@ from pathlib import Path
 import cv2
 from sqlalchemy import delete
 
-from .database import SessionLocal
+from .database import STORAGE_DIR, SessionLocal
 from .models import Analysis, ClassStat, FrameMetric
+from .storage_security import ensure_within_storage, storage_path
+
+
+class ModelLoadError(RuntimeError):
+    pass
+
+
+def quarantine_model(analysis: Analysis, reason: str) -> None:
+    model = analysis.model
+    source = ensure_within_storage(model.path, STORAGE_DIR)
+    quarantine_dir = storage_path(STORAGE_DIR, "quarantine", str(model.user_id))
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+    target = quarantine_dir / f"model-{model.id}-{source.name}"
+    try:
+        if source.exists():
+            shutil.move(str(source), str(target))
+            model.path = str(target)
+    except OSError as exc:
+        reason = f"{reason}; 격리 파일 이동 실패: {exc}"
+    model.quarantined = True
+    model.quarantine_reason = reason[:1000]
+    model.quarantined_at = datetime.now(timezone.utc)
 
 
 def run_analysis(analysis_id: int) -> None:
@@ -30,12 +53,16 @@ def run_analysis(analysis_id: int) -> None:
     capture = None
     writer = None
     try:
-        model = YOLO(analysis.model.path)
+        try:
+            model_path = ensure_within_storage(analysis.model.path, STORAGE_DIR)
+            model = YOLO(str(model_path))
+        except Exception as exc:
+            raise ModelLoadError(str(exc)) from exc
         analysis.model.task = getattr(model, "task", None)
         names = model.names if isinstance(model.names, dict) else dict(enumerate(model.names))
         analysis.model.class_names_json = json.dumps([str(names[key]) for key in sorted(names)])
 
-        source_path = Path(analysis.video.path)
+        source_path = ensure_within_storage(analysis.video.path, STORAGE_DIR)
         if source_path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
             frame = cv2.imread(str(source_path))
             if frame is None:
@@ -43,7 +70,7 @@ def run_analysis(analysis_id: int) -> None:
             started = time.perf_counter()
             result = model.predict(frame, conf=analysis.confidence, device="cpu", verbose=False)[0]
             elapsed = max(time.perf_counter() - started, 0.001)
-            output_path = source_path.parents[2] / "outputs" / f"analysis-{analysis.id}.jpg"
+            output_path = storage_path(STORAGE_DIR, "outputs", f"analysis-{analysis.id}.jpg")
             output_path.parent.mkdir(parents=True, exist_ok=True)
             if not cv2.imwrite(str(output_path), result.plot()):
                 raise ValueError("결과 이미지를 저장할 수 없습니다.")
@@ -77,7 +104,7 @@ def run_analysis(analysis_id: int) -> None:
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-        output_path = Path(analysis.video.path).parents[2] / "outputs" / f"analysis-{analysis.id}.mp4"
+        output_path = storage_path(STORAGE_DIR, "outputs", f"analysis-{analysis.id}.mp4")
         working_path = output_path.with_name(f"analysis-{analysis.id}-working.mp4")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         writer = cv2.VideoWriter(str(working_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
@@ -158,6 +185,13 @@ def run_analysis(analysis_id: int) -> None:
         analysis.processed_frames = processed
         analysis.avg_confidence = confidence_sum / detection_total if detection_total else 0
         analysis.processing_fps = processed / elapsed
+        analysis.completed_at = datetime.now(timezone.utc)
+        db.commit()
+    except ModelLoadError as exc:
+        reason = f"모델 로딩 실패: {exc}"
+        quarantine_model(analysis, reason)
+        analysis.status = "failed"
+        analysis.error_message = "모델을 불러오지 못해 해당 파일을 격리했습니다. 새 PT 모델을 등록해 주세요."
         analysis.completed_at = datetime.now(timezone.utc)
         db.commit()
     except Exception as exc:

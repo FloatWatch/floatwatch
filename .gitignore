@@ -237,6 +237,8 @@ coverage/
 *.log
 backend/data/
 backend/storage/
+backend/backups/
+backend/floatwatch-rollback-*/
 tmp/
 temp/
 

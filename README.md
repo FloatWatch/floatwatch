@@ -1,5 +1,7 @@
 # FloatWatch
 
+Operational backup and restore commands are documented in [BACKUP_RESTORE.md](./BACKUP_RESTORE.md).
+
 YOLOv8/YOLO11 `.pt` 모델로 부유물 동영상을 분석하고 결과 영상과 통계를 기록하는 로컬 MVP입니다.
 
 ## 구성
@@ -62,3 +64,5 @@ python -m pytest
 CPU 분석은 서버 내부 단일 대기열에서 한 건씩 처리됩니다. 서버가 재시작되면 처리 중이던 작업은 실패로 정리되고, 아직 시작되지 않은 대기 작업은 다시 대기열에 등록됩니다. 로컬 시연 서버는 여러 Uvicorn worker를 사용하지 않고 단일 프로세스로 실행해야 합니다.
 
 기본 사용자 저장공간은 모델과 분석 미디어를 합쳐 5GB이며 `.env`의 `USER_STORAGE_LIMIT_BYTES`로 조정할 수 있습니다. 기본 미디어 제한은 최대 4K 픽셀 수와 60분이며 `MAX_MEDIA_PIXELS`, `MAX_VIDEO_DURATION_SECONDS`로 변경할 수 있습니다.
+
+업로드와 분석 결과 저장 시 최소 디스크 여유 공간을 확인합니다. 기본 예약 공간은 512MB이며 `MIN_FREE_DISK_BYTES`로 변경할 수 있습니다. 동영상 분석은 중간 파일과 최종 파일이 함께 생성될 수 있어 원본 크기의 3배를 예상 공간으로 계산하며 `ANALYSIS_DISK_MULTIPLIER`로 조정할 수 있습니다.
