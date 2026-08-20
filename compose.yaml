@@ -6,6 +6,7 @@ services:
     environment:
       DATABASE_URL: sqlite:////app/data/app.db
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
+      INFERENCE_DEVICE: ${INFERENCE_DEVICE:-cpu}
     volumes:
       - backend-data:/app/data
       - backend-storage:/app/storage

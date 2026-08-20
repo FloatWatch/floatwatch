@@ -5,6 +5,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import time
 from collections import defaultdict
@@ -27,6 +28,9 @@ MAX_REASONABLE_FPS = 240.0
 MAX_REASONABLE_FRAME_COUNT = 100_000_000
 MAX_ANALYSIS_RUNTIME_SECONDS = int(os.getenv("MAX_ANALYSIS_RUNTIME_SECONDS", "3600"))
 MAX_ANALYSIS_PROCESSED_FRAMES = int(os.getenv("MAX_ANALYSIS_PROCESSED_FRAMES", "50000"))
+INFERENCE_DEVICE = os.getenv("INFERENCE_DEVICE", "cpu").strip().lower() or "cpu"
+if INFERENCE_DEVICE != "cpu" and not re.fullmatch(r"cuda(?::\d+)?", INFERENCE_DEVICE):
+    raise RuntimeError("INFERENCE_DEVICE must be 'cpu', 'cuda', or 'cuda:<index>'")
 logger = logging.getLogger("floatwatch.analysis")
 ANALYSIS_ERROR_MESSAGES = {
     "MODEL_LOAD_FAILED": "AI 모델을 불러오지 못했습니다.",
@@ -386,7 +390,7 @@ def run_analysis(analysis_id: int) -> None:
             advance_progress(analysis, 25)
             db.commit()
             started = time.perf_counter()
-            result = model.predict(frame, conf=analysis.confidence, device="cpu", verbose=False)[0]
+            result = model.predict(frame, conf=analysis.confidence, device=INFERENCE_DEVICE, verbose=False)[0]
             ensure_runtime_budget()
             db.refresh(analysis)
             if analysis.status != "processing":
@@ -477,7 +481,7 @@ def run_analysis(analysis_id: int) -> None:
             if should_process:
                 if processed >= MAX_ANALYSIS_PROCESSED_FRAMES:
                     raise AnalysisResourceLimit("processed frame limit exceeded")
-                result = model.predict(frame, conf=analysis.confidence, device="cpu", verbose=False)[0]
+                result = model.predict(frame, conf=analysis.confidence, device=INFERENCE_DEVICE, verbose=False)[0]
                 ensure_runtime_budget()
                 boxes = result.boxes
                 raw_confidences = boxes.conf.cpu().tolist() if boxes is not None else []

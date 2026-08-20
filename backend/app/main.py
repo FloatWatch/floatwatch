@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from .analysis_service import (
     ANALYSIS_ERROR_MESSAGES,
+    INFERENCE_DEVICE,
     InvalidAnalysisTransition,
     analysis_media_type,
     cleanup_analysis_artifacts,
@@ -2051,7 +2052,7 @@ async def realtime_detect(
                 raise HTTPException(422, "AI 모델을 불러오지 못했습니다.") from exc
     try:
         with realtime_inference_lock:
-            result = cached[1].predict(image, conf=confidence, device="cpu", verbose=False)[0]
+            result = cached[1].predict(image, conf=confidence, device=INFERENCE_DEVICE, verbose=False)[0]
     except Exception as exc:
         logger.exception("event=realtime_inference_failed model_id=%s", model_artifact.id)
         raise HTTPException(500, "실시간 탐지 중 문제가 발생했습니다.") from exc
