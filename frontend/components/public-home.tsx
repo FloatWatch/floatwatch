@@ -28,13 +28,14 @@ import { api } from "@/lib/api";
 import type { ContentItem } from "@/lib/types";
 import { BrandWordmark } from "./brand-wordmark";
 
-type PublicView = "home" | "overview" | "development" | "notice" | "community" | "faq";
+type PublicView = "home" | "overview" | "development" | "notice" | "community" | "bug" | "faq";
 
 export function PublicHome({ onLogin }: { onLogin: () => void }) {
   const [view, setView] = useState<PublicView>("home");
   const [notices, setNotices] = useState<ContentItem[]>([]);
   const [faqs, setFaqs] = useState<ContentItem[]>([]);
   const [posts, setPosts] = useState<ContentItem[]>([]);
+  const [bugReports, setBugReports] = useState<ContentItem[]>([]);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [menu, setMenu] = useState(false);
 
@@ -43,17 +44,19 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
       api<ContentItem[]>("/content?category=notice"),
       api<ContentItem[]>("/content?category=faq"),
       api<ContentItem[]>("/content?category=free"),
+      api<ContentItem[]>("/content?category=bug"),
     ])
-      .then(([noticeItems, faqItems, postItems]) => {
+      .then(([noticeItems, faqItems, postItems, bugItems]) => {
         setNotices(noticeItems);
         setFaqs(faqItems);
         setPosts(postItems);
+        setBugReports(bugItems);
       })
       .catch(() => {});
   }, []);
 
   useEffect(() => {
-    const validViews: PublicView[] = ["overview", "development", "notice", "community", "faq"];
+    const validViews: PublicView[] = ["overview", "development", "notice", "community", "bug", "faq"];
     const syncHash = () => {
       const hash = window.location.hash.slice(1) as PublicView;
       setView(validViews.includes(hash) ? hash : "home");
@@ -114,7 +117,7 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
             </button>
           </PublicNavGroup>
 
-          <PublicNavGroup label="게시판" active={view === "notice" || view === "community" || view === "faq"}>
+          <PublicNavGroup label="게시판" active={view === "notice" || view === "community" || view === "bug" || view === "faq"}>
             <button className={view === "notice" ? "active" : ""} onClick={() => navigate("notice")}>
               <Bell size={16} />
               공지사항
@@ -122,6 +125,10 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
             <button className={view === "community" ? "active" : ""} onClick={() => navigate("community")}>
               <MessageSquareText size={16} />
               자유게시판
+            </button>
+            <button className={view === "bug" ? "active" : ""} onClick={() => navigate("bug")}>
+              <MessageSquareText size={16} />
+              버그 제보
             </button>
             <button className={view === "faq" ? "active" : ""} onClick={() => navigate("faq")}>
               <CircleHelp size={16} />
@@ -184,6 +191,27 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
           </section>
         </PublicSubpage>
       )}
+      {view === "bug" && (
+        <PublicSubpage
+          kicker="BUG REPORT"
+          title="버그 제보"
+          description="서비스 이용 중 발견한 오류와 재현 상황을 확인할 수 있습니다. 제보 등록은 로그인 후 이용해 주세요."
+          icon={<MessageSquareText size={20} />}
+          onBack={() => navigate("home")}
+        >
+          <section className="community-band subpage-content">
+            <div className="community-list">
+              {bugReports.map((item) => (
+                <article key={item.id}>
+                  <div><strong>{item.title}</strong><span>{item.author?.name ?? "익명"} · 조회수 {item.views}</span></div>
+                  <time>{formatDate(item.created_at)}</time>
+                </article>
+              ))}
+              {!bugReports.length && <p className="public-empty">등록된 버그 제보가 없습니다.</p>}
+            </div>
+          </section>
+        </PublicSubpage>
+      )}
       {view === "faq" && (
         <PublicSubpage
           kicker="HELP CENTER"
@@ -210,7 +238,7 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
         </PublicSubpage>
       )}
 
-      {(view === "notice" || view === "community" || view === "faq") && (
+      {(view === "notice" || view === "community" || view === "bug" || view === "faq") && (
         <footer className="public-footer">
           <div className="public-brand">
             <BrandMark />

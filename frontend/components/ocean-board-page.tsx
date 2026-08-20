@@ -5,11 +5,12 @@ import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronLeft, Che
 import { API_URL, api } from "@/lib/api";
 import type { ContentItem, User } from "@/lib/types";
 
-type BoardCategory = "notice" | "free" | "faq";
+type BoardCategory = "notice" | "free" | "bug" | "faq";
 
 const boardMeta = {
   notice: { kicker: "SERVICE NOTICE", title: "공지사항", description: "서비스 운영과 분석 기능의 주요 변경 사항을 전합니다." },
   free: { kicker: "COMMUNITY", title: "자유게시판", description: "분석 경험과 부유물 관측 정보를 자유롭게 나눌 수 있습니다." },
+  bug: { kicker: "BUG REPORT", title: "버그 제보", description: "서비스 이용 중 발견한 오류와 재현 상황을 제보할 수 있습니다." },
   faq: { kicker: "HELP CENTER", title: "자주 묻는 질문", description: "모델 등록부터 결과 확인까지 자주 묻는 내용을 정리했습니다." },
 };
 
@@ -25,7 +26,7 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
   const [appliedSearch, setAppliedSearch] = useState("");
   const meta = boardMeta[category];
   const isAdmin = user?.role === "admin";
-  const canWrite = category === "free" ? Boolean(user) : isAdmin;
+  const canWrite = category === "free" || category === "bug" ? Boolean(user) : isAdmin;
   const pageCount = Math.max(1, Math.ceil(items.length / 10));
   const pageItems = items.slice((page - 1) * 10, page * 10);
 
@@ -168,10 +169,10 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
           <button type="button" onClick={() => window.history.back()}><ChevronLeft size={17} />목록으로</button>
           <span>{editing ? "EDIT POST" : "NEW POST"}</span>
           <h2>{editing ? `${meta.title} 수정` : `${meta.title} 글쓰기`}</h2>
-          <p>{editing ? "내용을 확인하고 필요한 부분을 수정하세요." : "전달할 내용을 명확하게 작성해 주세요."}</p>
+          <p>{editing ? "내용을 확인하고 필요한 부분을 수정하세요." : category === "bug" ? "발생 화면, 재현 순서와 기대했던 동작을 함께 작성해 주세요." : "전달할 내용을 명확하게 작성해 주세요."}</p>
         </header>
         <form className="ocean-compose-form" onSubmit={submit} key={editing?.id ?? "new"}>
-          <label><span>제목</span><input name="title" required minLength={2} defaultValue={editing?.title} placeholder="제목을 입력하세요" /></label>
+          <label><span>제목</span><input name="title" required minLength={2} defaultValue={editing?.title} placeholder={category === "bug" ? "발견한 오류를 한 문장으로 입력하세요" : "제목을 입력하세요"} /></label>
           <RichTextEditor initialValue={editing?.content ?? ""} />
           <AttachmentPicker />
           {editing?.attachments?.length ? <div className="ocean-existing-files">{editing.attachments.map((file) => <a href={`${API_URL}${file.url}`} key={file.id}><Paperclip size={13} />{file.name}</a>)}</div> : null}
@@ -185,9 +186,9 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
   }
 
   return (
-    <section className="ocean-board-page page-content-transition">
+    <section className={`ocean-board-page ocean-board-page--${category} page-content-transition`}>
       <header className="ocean-board-heading">
-        <div><span>{meta.kicker}</span><h2>{meta.title}</h2><p>{meta.description}</p></div>
+        <div><h2>{meta.title}</h2><p>{category === "notice" ? "서비스 이용 안내와 주요 변경 사항을 확인할 수 있습니다. 제목을 선택하면 공지 내용을 자세히 볼 수 있습니다." : meta.description}</p></div>
         <div className="ocean-board-status"><span><strong>{items.length}</strong>개의 게시물</span></div>
       </header>
 
@@ -217,8 +218,8 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
             <header><span>{selected.pinned ? "중요 안내" : meta.title}</span><h3>{selected.title}</h3><p>{selected.author?.name ?? "FloatWatch"} · {formatDate(selected.created_at)} · 조회 {selected.views}</p></header>
             <div className="ocean-reader-body" dangerouslySetInnerHTML={{ __html: selected.content }} />
             {selected.attachments?.length > 0 && <div className="ocean-reader-files"><strong><Paperclip size={14} />첨부파일</strong>{selected.attachments.map((file) => <AttachmentLink file={file} key={file.id} />)}</div>}
-            {category === "free" && <section className="ocean-comments"><header><strong>댓글</strong><span>{selected.comments?.length ?? 0}</span></header><form onSubmit={submitComment}><input name="comment" required maxLength={2000} placeholder={user ? "댓글을 입력하세요" : "로그인 후 댓글을 작성할 수 있습니다"} /><button type="submit"><Send size={15} />등록</button></form><div>{selected.comments?.map((comment) => <article key={comment.id}><div><strong>{comment.author?.name ?? "탈퇴한 회원"}</strong><time>{formatDateTime(comment.created_at)}</time></div><p>{comment.content}</p>{(isAdmin || comment.author?.id === user?.id) && <button type="button" onClick={() => removeComment(comment.id)}><Trash2 size={13} />삭제</button>}</article>)}{!selected.comments?.length && <p className="ocean-comments-empty">첫 댓글을 남겨보세요.</p>}</div></section>}
-            {(isAdmin || (category === "free" && selected.author?.id === user?.id)) && <AdminActions showPin={isAdmin && category === "notice"} pinned={selected.pinned} onPin={() => togglePinned(selected)} onEdit={() => startEdit(selected)} onDelete={() => remove(selected)} />}
+            {(category === "free" || category === "bug") && <section className="ocean-comments"><header><strong>댓글</strong><span>{selected.comments?.length ?? 0}</span></header><form onSubmit={submitComment}><input name="comment" required maxLength={2000} placeholder={user ? category === "bug" ? "추가 상황이나 처리 의견을 입력하세요" : "댓글을 입력하세요" : "로그인 후 댓글을 작성할 수 있습니다"} /><button type="submit"><Send size={15} />등록</button></form><div>{selected.comments?.map((comment) => <article key={comment.id}><div><strong>{comment.author?.name ?? "탈퇴한 회원"}</strong><time>{formatDateTime(comment.created_at)}</time></div><p>{comment.content}</p>{(isAdmin || comment.author?.id === user?.id) && <button type="button" onClick={() => removeComment(comment.id)}><Trash2 size={13} />삭제</button>}</article>)}{!selected.comments?.length && <p className="ocean-comments-empty">{category === "bug" ? "등록된 처리 의견이 없습니다." : "첫 댓글을 남겨보세요."}</p>}</div></section>}
+            {(isAdmin || ((category === "free" || category === "bug") && selected.author?.id === user?.id)) && <AdminActions showPin={isAdmin && category === "notice"} pinned={selected.pinned} onPin={() => togglePinned(selected)} onEdit={() => startEdit(selected)} onDelete={() => remove(selected)} />}
           </article>
         ) : (
           <div className="ocean-board-list">

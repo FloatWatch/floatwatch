@@ -1,13 +1,23 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, ChevronRight, MessageCircle, Send, X } from "lucide-react";
+import { ArrowUp, Bot, ChevronRight, Send, X } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ContentItem } from "@/lib/types";
 
 type ChatMessage = { id: number; role: "bot" | "user"; text: string; action?: { label: string; view: string } };
 
 const quickQuestions = ["이 프로젝트는 왜 만들었나요?", "분석은 어떻게 시작하나요?", "어떤 PT 파일을 지원하나요?", "실시간 CCTV도 지원하나요?"];
+const followUpsByView: Record<string, string[]> = {
+  overview: ["무엇을 탐지할 수 있나요?", "분석은 어떻게 시작하나요?", "실시간 CCTV도 지원하나요?", "결과는 어디에 저장되나요?"],
+  development: ["어떤 PT 파일을 지원하나요?", "분석 시간은 얼마나 걸리나요?", "지원하는 미디어 형식은?", "Detection과 Segmentation 차이는?"],
+  analysis: ["어떤 PT 파일을 지원하나요?", "지원하는 미디어 형식은?", "최소 신뢰도는 무엇인가요?", "결과는 어디에 저장되나요?"],
+  compare: ["신뢰도는 정확도인가요?", "두 모델은 어떻게 비교하나요?", "결과는 어디에 저장되나요?", "최소 신뢰도는 무엇인가요?"],
+  records: ["두 모델은 어떻게 비교하나요?", "신뢰도는 정확도인가요?", "분석은 어떻게 시작하나요?", "분석 실패 시 어떻게 하나요?"],
+  inquiry: ["분석 실패 시 어떻게 하나요?", "업로드 용량 제한은?", "지원하는 미디어 형식은?", "내 기록은 다른 사람도 보나요?"],
+  login: ["내 기록은 다른 사람도 보나요?", "분석은 어떻게 시작하나요?", "결과는 어디에 저장되나요?", "1:1 문의는 비공개인가요?"],
+  home: ["내 기록은 다른 사람도 보나요?", "결과는 어디에 저장되나요?", "분석은 어떻게 시작하나요?", "1:1 문의는 비공개인가요?"],
+};
 const guides = [
   {
     words: ["프로젝트 목적", "만든 목적", "만든 이유", "개발 목적", "개발 이유", "개발 배경", "왜 만들", "무엇을 위해"],
@@ -107,10 +117,18 @@ export function FloatWatchChat({ loggedIn }: { loggedIn: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: 1, role: "bot", text: "안녕하세요. FloatWatch 이용 방법을 안내해드릴게요." }]);
   const [input, setInput] = useState("");
   const [responding, setResponding] = useState(false);
+  const [suggestions, setSuggestions] = useState(quickQuestions);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const chatRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const responseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { api<ContentItem[]>("/content?category=faq").then(setFaqs).catch(() => {}); }, []);
+  useEffect(() => {
+    const update = () => setShowScrollTop(window.scrollY > 640);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [messages, open, responding]);
   useEffect(() => () => {
     if (responseTimerRef.current) clearTimeout(responseTimerRef.current);
@@ -132,14 +150,17 @@ export function FloatWatchChat({ loggedIn }: { loggedIn: boolean }) {
     const guide = guides.map((item) => ({ item, score: item.words.filter((word) => normalized.includes(normalize(word))).length })).sort((a, b) => b.score - a.score)[0];
     const faq = normalizedFaqs.map((item) => ({ item, score: scoreText(normalized, normalize(item.plain)) })).sort((a, b) => b.score - a.score)[0];
     let reply: ChatMessage;
-    if (faq && faq.score >= 2 && (!guide || faq.score > guide.score)) reply = { id: nextId + 1, role: "bot", text: stripHtml(faq.item.content) };
-    else if (guide && guide.score > 0) reply = { id: nextId + 1, role: "bot", text: guide.item.text, action: guide.item.action };
+    if (faq && faq.score >= 2 && (!guide || faq.score > guide.score)) reply = { id: nextId + 1, role: "bot", text: compactAnswer(stripHtml(faq.item.content)) };
+    else if (guide && guide.score > 0) reply = { id: nextId + 1, role: "bot", text: compactAnswer(guide.item.text), action: guide.item.action };
     else reply = { id: nextId + 1, role: "bot", text: "관련 안내를 찾지 못했습니다. 정확한 확인이 필요하면 1:1 문의로 내용을 남겨주세요.", action: { label: loggedIn ? "1:1 문의 작성" : "로그인 후 문의하기", view: loggedIn ? "inquiry" : "login" } };
+    const related = followUpsByView[reply.action?.view ?? ""] ?? quickQuestions;
+    const nextSuggestions = related.filter((item) => normalize(item) !== normalized).slice(0, 4);
     setMessages((items) => [...items, { id: nextId, role: "user", text: question }]);
     setInput("");
     setResponding(true);
     responseTimerRef.current = setTimeout(() => {
       setMessages((items) => [...items, reply]);
+      setSuggestions(nextSuggestions.length === 4 ? nextSuggestions : [...nextSuggestions, ...quickQuestions.filter((item) => normalize(item) !== normalized && !nextSuggestions.includes(item))].slice(0, 4));
       setResponding(false);
       responseTimerRef.current = null;
     }, 720);
@@ -148,11 +169,21 @@ export function FloatWatchChat({ loggedIn }: { loggedIn: boolean }) {
   function navigate(view: string) { window.location.href = view === "login" ? "/auth?login=1" : `/auth?workspace=${view}`; }
 
   return <div ref={chatRef} className={`float-chat ${open ? "open" : ""}`}>
-    <section className={`float-chat-panel ${open ? "is-open" : "is-closed"}`} aria-label="FloatWatch 도움말 챗봇" aria-hidden={!open}><header><div><span><Bot size={19}/></span><div><strong>FloatWatch 도우미</strong><small>FAQ와 서비스 안내에서 답변합니다</small></div></div><button type="button" onClick={() => setOpen(false)} aria-label="챗봇 닫기"><X size={18}/></button></header><div className="float-chat-messages" ref={scrollRef}>{messages.map((message) => <article className={message.role} key={message.id}><p>{message.text}</p>{message.action && <button type="button" onClick={() => navigate(message.action!.view)}>{message.action.label}<ChevronRight size={14}/></button>}</article>)}{responding && <article className="bot float-chat-typing" aria-label="답변 작성 중"><p><span/><span/><span/></p></article>}</div>{messages.length === 1 && !responding && <div className="float-chat-quick">{quickQuestions.map((question) => <button type="button" onClick={() => ask(question)} key={question}>{question}</button>)}</div>}<form onSubmit={submit}><input value={input} onChange={(event) => setInput(event.target.value)} maxLength={300} placeholder={responding ? "답변을 준비하고 있습니다" : "궁금한 내용을 입력하세요"} aria-label="챗봇 질문" disabled={responding}/><button type="submit" disabled={!input.trim() || responding} aria-label="질문 보내기"><Send size={17}/></button></form><footer>현재 답변은 OpenAI를 사용하지 않습니다.</footer></section>
-    <button className="float-chat-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-label={open ? "챗봇 닫기" : "도움말 챗봇 열기"}>{open ? <X size={21}/> : <MessageCircle size={22}/>}<span>도움말</span></button>
+    <section className={`float-chat-panel ${open ? "is-open" : "is-closed"}`} aria-label="FloatWatch 도움말 챗봇" aria-hidden={!open}><header><div><span><Bot size={19}/></span><div><strong>FloatWatch 도우미</strong><small>FAQ와 서비스 안내에서 답변합니다</small></div></div><button type="button" onClick={() => setOpen(false)} aria-label="챗봇 닫기"><X size={18}/></button></header><div className="float-chat-messages" ref={scrollRef}>{messages.map((message) => <article className={message.role} key={message.id}><p>{message.text}</p>{message.action && <button type="button" onClick={() => navigate(message.action!.view)}>{message.action.label}<ChevronRight size={14}/></button>}</article>)}{responding && <article className="bot float-chat-typing" aria-label="답변 작성 중"><p><span/><span/><span/></p></article>}</div>{!responding && <div className="float-chat-quick float-chat-followups">{suggestions.map((question) => <button type="button" onClick={() => ask(question)} key={question}>{question}</button>)}</div>}<form onSubmit={submit}><input value={input} onChange={(event) => setInput(event.target.value)} maxLength={300} placeholder={responding ? "답변을 준비하고 있습니다" : "궁금한 내용을 입력하세요"} aria-label="챗봇 질문" disabled={responding}/><button type="submit" disabled={!input.trim() || responding} aria-label="질문 보내기"><Send size={17}/></button></form><footer>현재 답변은 OpenAI를 사용하지 않습니다.</footer></section>
+    {showScrollTop && !open && <button className="float-scroll-top" type="button" onClick={() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" })} aria-label="맨 위로 이동" title="맨 위로"><ArrowUp size={20}/></button>}
+    <button className="float-chat-toggle" type="button" onClick={() => setOpen((value) => !value)} aria-label={open ? "챗봇 닫기" : "도움말 챗봇 열기"}>{open ? <X size={25}/> : <Bot size={30}/>}</button>
   </div>;
 }
 
 function normalize(value: string) { return value.toLowerCase().replace(/[^0-9a-z가-힣]+/g, " ").trim(); }
 function stripHtml(value: string) { return value.replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim(); }
+function compactAnswer(value: string) {
+  const text = stripHtml(value);
+  const sentences = text.match(/[^.!?。]+[.!?。]?/g)?.map((item) => item.trim()).filter(Boolean) ?? [text];
+  const concise = sentences.slice(0, 2).join(" ");
+  if (concise.length <= 145) return concise;
+  const shortened = concise.slice(0, 142);
+  const boundary = shortened.lastIndexOf(" ");
+  return `${shortened.slice(0, boundary > 90 ? boundary : 142).replace(/[.,!?]?$/, "")}…`;
+}
 function scoreText(question: string, target: string) { const tokens = question.split(" ").filter((token) => token.length > 1); return tokens.reduce((score, token) => score + (target.includes(token) ? 1 : 0), 0); }

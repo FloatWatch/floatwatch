@@ -21,7 +21,7 @@ function sanitizeReturnPath(raw: string | null) {
 }
 
 function parseEntryView(raw: string | null): WorkspaceView | null {
-  const views: WorkspaceView[] = ["home", "overview", "development", "analysis", "records", "compare", "free", "inquiry", "faq", "notice", "admin"];
+  const views: WorkspaceView[] = ["home", "overview", "development", "analysis", "records", "compare", "free", "bug", "inquiry", "faq", "notice", "admin"];
   return views.includes(raw as WorkspaceView) ? raw as WorkspaceView : null;
 }
 
@@ -32,7 +32,7 @@ export default function AuthPage() {
   const [openLoginPanel, setOpenLoginPanel] = useState(false);
   const [entryView, setEntryView] = useState<WorkspaceView | null>(null);
   const [oauthError, setOauthError] = useState("");
-  const [publicView, setPublicView] = useState<"home" | "overview" | "development" | "notice" | "community" | "faq">("home");
+  const [publicView, setPublicView] = useState<"home" | "overview" | "development" | "notice" | "community" | "bug" | "faq">("home");
   const router = useRouter();
 
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function AuthPage() {
     const nextEntryView = parseEntryView(params.get("workspace") ?? params.get("entry"));
     const nextOauthError = params.get("oauth_error") ?? "";
     const requestedView = params.get("view");
-    const publicViews = ["overview", "development", "notice", "community", "faq"] as const;
+    const publicViews = ["overview", "development", "notice", "community", "bug", "faq"] as const;
     const nextPublicView = publicViews.includes(requestedView as typeof publicViews[number]) ? requestedView as typeof publicViews[number] : "home";
     setOpenLoginPanel(nextOpenLoginPanel);
     setReturnTo(nextReturnTo);
@@ -65,7 +65,7 @@ export default function AuthPage() {
     function restorePublicLocation() {
       const params = new URLSearchParams(window.location.search);
       const requestedView = params.get("view");
-      const publicViews = ["overview", "development", "notice", "community", "faq"] as const;
+      const publicViews = ["overview", "development", "notice", "community", "bug", "faq"] as const;
       setPublicView(publicViews.includes(requestedView as typeof publicViews[number]) ? requestedView as typeof publicViews[number] : "home");
       setOpenLoginPanel(params.get("login") === "1");
     }
@@ -153,7 +153,7 @@ export default function AuthPage() {
           router.push("/auth?view=development");
           return;
         }
-        if (view === "notice" || view === "community" || view === "faq") {
+        if (view === "notice" || view === "community" || view === "bug" || view === "faq") {
           setPublicView(view);
           router.push(`/auth?view=${view}`);
           return;

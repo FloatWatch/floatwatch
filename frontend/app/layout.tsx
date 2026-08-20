@@ -1,5 +1,6 @@
 ﻿import type { Metadata } from "next";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import { ClearStaleServiceWorker } from "@/components/clear-stale-service-worker";
 
 export const metadata: Metadata = {

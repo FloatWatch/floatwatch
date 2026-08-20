@@ -5,6 +5,7 @@ import { ArrowRight, BarChart3, Bell, CircleHelp, Clock3, FileVideo, MessageSqua
 import { api } from "@/lib/api";
 import type { Analysis, ContentItem, User } from "@/lib/types";
 import type { WorkspaceView } from "./workspace-sections";
+import { analysisStatusLabel, effectiveAnalysisStatus } from "@/lib/analysis-status";
 
 type Props = {
   user: User;
@@ -47,7 +48,7 @@ export function WorkspaceHome({ user, analyses, modelCount, videoCount, onNaviga
     </section>
 
     <div className="home-columns">
-      <section className="home-feed"><header><div><p className="section-kicker">RECENT ANALYSIS</p><h3>최근 분석 기록</h3></div><button onClick={() => onNavigate("records")}>전체 보기<ArrowRight size={15}/></button></header><div>{analyses.slice(0, 4).map((item) => <button className="home-record" key={item.id} onClick={() => openRecord(item.id)}><span className={`run-icon ${item.status}`}><ScanLine size={17}/></span><div><strong>{item.video.name}</strong><small>{item.model.name} · {formatDate(item.created_at)}</small></div><span className={`status ${item.status}`}>{statusName(item.status)}</span></button>)}{!analyses.length && <div className="home-empty"><ScanLine size={24}/><p>아직 분석 기록이 없습니다.</p><button onClick={() => onNavigate("analysis")}>첫 분석 시작</button></div>}</div></section>
+      <section className="home-feed"><header><div><p className="section-kicker">RECENT ANALYSIS</p><h3>최근 분석 기록</h3></div><button onClick={() => onNavigate("records")}>전체 보기<ArrowRight size={15}/></button></header><div>{analyses.slice(0, 4).map((item) => { const effective = effectiveAnalysisStatus(item.status, item.error_code); return <button className="home-record" key={item.id} onClick={() => openRecord(item.id)}><span className={`run-icon ${effective}`}><ScanLine size={17}/></span><div><strong>{item.video.name}</strong><small>{item.model.name} · {formatDate(item.created_at)}</small></div><span className={`status ${effective}`}>{statusName(item.status, item.error_code)}</span></button>; })}{!analyses.length && <div className="home-empty"><ScanLine size={24}/><p>아직 분석 기록이 없습니다.</p><button onClick={() => onNavigate("analysis")}>첫 분석 시작</button></div>}</div></section>
 
       <section className="home-feed home-news"><header><div><p className="section-kicker">SERVICE NEWS</p><h3>공지사항</h3></div><Bell size={19}/></header><div>{notices.slice(0, 3).map((item) => <button key={item.id} onClick={() => onNavigate("notice")}><span>{item.pinned ? "중요" : "공지"}</span><div><strong>{item.title}</strong><small>{formatDate(item.created_at)}</small></div></button>)}{!notices.length && <div className="home-empty"><p>등록된 공지가 없습니다.</p></div>}</div><footer><button onClick={() => onNavigate("faq")}><CircleHelp size={16}/>자주 묻는 질문 {faqs.length}건<ArrowRight size={14}/></button></footer></section>
     </div>
@@ -55,4 +56,4 @@ export function WorkspaceHome({ user, analyses, modelCount, videoCount, onNaviga
 }
 
 function formatDate(value: string) { return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
-function statusName(value: Analysis["status"]) { return { queued: "대기", processing: "분석 중", completed: "완료", failed: "실패" }[value]; }
+function statusName(value: Analysis["status"], errorCode?: Analysis["error_code"]) { return analysisStatusLabel(value, 0, errorCode).replace(/ \d+%$/, ""); }

@@ -8,7 +8,7 @@ export type User = {
 
 export type ContentItem = {
   id: number;
-  category: "free" | "notice" | "faq";
+  category: "free" | "bug" | "notice" | "faq";
   title: string;
   content: string;
   pinned: boolean;
@@ -71,6 +71,17 @@ export type VideoAsset = {
   frame_count: number | null;
   created_at: string;
   media_type: "image" | "video";
+  latitude: number | null;
+  longitude: number | null;
+  captured_at: string | null;
+  location_name: string | null;
+  location_description: string | null;
+  content_sha256: string | null;
+  location_source: "metadata" | "manual" | "none" | null;
+  location_confirmed: boolean;
+  coastal_eligible: boolean | null;
+  coast_distance_m: number | null;
+  coastal_reason: "within_coastal_zone" | "outside_coastal_zone" | "outside_korea" | null;
 };
 
 export type ClassStat = { class_id: number; class_name: string; count: number; avg_confidence: number };
@@ -84,7 +95,7 @@ export type FrameMetric = {
 
 export type Analysis = {
   id: number;
-  status: "queued" | "processing" | "completed" | "failed";
+  status: "queued" | "processing" | "completed" | "failed" | "cancelled";
   confidence: number;
   frame_stride: number;
   progress: number;
@@ -92,6 +103,7 @@ export type Analysis = {
   processed_frames: number;
   avg_confidence: number | null;
   processing_fps: number | null;
+  error_code: "MODEL_LOAD_FAILED" | "MEDIA_READ_FAILED" | "VIDEO_CODEC_UNSUPPORTED" | "OUTPUT_CREATE_FAILED" | "INSUFFICIENT_STORAGE" | "SERVER_RESTARTED" | "RECOVERY_INPUT_MISSING" | "USER_CANCELLED" | "INFERENCE_FAILED" | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, MouseEvent, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, MouseEvent, useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -21,6 +21,7 @@ import {
   Database,
   Server,
   LogOut,
+  Presentation,
   ChevronRight,
   ChevronLeft,
 } from "lucide-react";
@@ -29,7 +30,7 @@ import type { User as UserType } from "@/lib/types";
 import { BrandWordmark } from "./brand-wordmark";
 import { OceanBoardPage } from "./ocean-board-page";
 
-type PublicView = "home" | "overview" | "development" | "notice" | "community" | "faq";
+type PublicView = "home" | "overview" | "development" | "notice" | "community" | "bug" | "faq";
 type AuthMode = "login" | "register";
 
 type AuthProps = {
@@ -47,11 +48,11 @@ type AuthProps = {
   isPanelOpen?: boolean;
   externalError?: string;
   authenticatedUser?: UserType;
-  onWorkspaceNavigate?: (view: "analysis" | "records" | "compare" | "inquiry" | "admin") => void;
+  onWorkspaceNavigate?: (view: "analysis" | "realtime" | "records" | "compare" | "inquiry" | "admin") => void;
   onAuthenticatedLogout?: () => void;
   onUserUpdated?: (user: UserType) => void;
   profileStats?: { analyses: number; inquiries: number };
-  contentView?: "home" | "overview" | "development" | "notice" | "community" | "faq";
+  contentView?: "home" | "overview" | "development" | "notice" | "community" | "bug" | "faq";
 };
 
 type FormState = { name: string; email: string; password: string };
@@ -94,6 +95,24 @@ export function AuthScreen({
     isPanelOpen === undefined ? initialPanelCollapsed : true,
   );
   const [panelClosing, setPanelClosing] = useState(false);
+  const [stageScale, setStageScale] = useState(1);
+  const [stageHeight, setStageHeight] = useState(910);
+
+  useEffect(() => {
+    const updateStageScale = () => {
+      if (window.innerWidth < 900) {
+        setStageScale(1);
+        setStageHeight(window.innerHeight);
+        return;
+      }
+      const nextScale = window.innerWidth / 1900;
+      setStageScale(nextScale);
+      setStageHeight(window.innerHeight / nextScale);
+    };
+    updateStageScale();
+    window.addEventListener("resize", updateStageScale);
+    return () => window.removeEventListener("resize", updateStageScale);
+  }, []);
 
   useEffect(() => {
     if (isPanelOpen === undefined) return;
@@ -246,10 +265,16 @@ export function AuthScreen({
   }
 
   return (
-    <div className="auth-entry-shell">
+    <div
+      className="auth-entry-shell"
+      style={{
+        "--auth-stage-scale": stageScale,
+        "--auth-stage-height": `${stageHeight}px`,
+      } as CSSProperties}
+    >
       <main className={`auth-shell ${compactMode ? "auth-shell-compact" : ""} ${panelCollapsed ? "auth-shell-collapsed" : ""} ${panelClosing ? "auth-panel-closing" : ""} ${authenticatedUser && profileOpen ? "profile-overlay-open" : ""} ${profileClosing ? "profile-overlay-closing" : ""}`}>
         {!compactMode && (
-          <section onClick={closePanelFromMain} className={`auth-visual ${contentView !== "home" ? "auth-visual-overview" : ""} ${contentView === "development" ? "auth-visual-development" : ""} ${contentView === "notice" || contentView === "community" || contentView === "faq" ? "auth-visual-board" : ""}`}>
+          <section onClick={closePanelFromMain} className={`auth-visual ${contentView !== "home" ? "auth-visual-overview" : ""} ${contentView === "development" ? "auth-visual-development" : ""} ${contentView === "notice" || contentView === "community" || contentView === "bug" || contentView === "faq" ? "auth-visual-board" : ""}`}>
             <span className="auth-shade" aria-hidden="true" />
 
             <div className="auth-topline">
@@ -276,6 +301,9 @@ export function AuthScreen({
                 <div className={`auth-menu-group ${openMenu === "analysis" ? "menu-open" : ""}`} onMouseEnter={() => setOpenMenu("analysis")}>
                   <button className="auth-menu-trigger" type="button" onFocus={() => setOpenMenu("analysis")}>분석 센터</button>
                   <div>
+                    <button type="button" onClick={() => { setOpenMenu(null); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); authenticatedUser && onWorkspaceNavigate ? onWorkspaceNavigate("realtime") : handleHeaderLogin(); }}>
+                      실시간 탐색
+                    </button>
                     <button type="button" onClick={() => { setOpenMenu(null); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); authenticatedUser && onWorkspaceNavigate ? onWorkspaceNavigate("analysis") : handleHeaderLogin(); }}>
                       부유물 탐색
                     </button>
@@ -295,6 +323,9 @@ export function AuthScreen({
                     </button>
                     <button type="button" onClick={() => navigateFromMenu("community")}>
                       자유게시판
+                    </button>
+                    <button type="button" onClick={() => navigateFromMenu("bug")}>
+                      버그 제보
                     </button>
                     <button type="button" onClick={() => navigateFromMenu("faq")}>
                       자주 묻는 질문
@@ -345,6 +376,12 @@ export function AuthScreen({
                       <ArrowRight aria-hidden="true" />
                       <article><div><BarChart3 size={27} /></div><small>PERFORMANCE</small><h3>결과 비교</h3><p>클래스 통계 · 처리 지표 기록</p></article>
                     </div>
+                    <footer className="development-specs overview-specs">
+                      <div><small>ANALYSIS TARGET</small><strong>드론 · CCTV 관측 영상</strong></div>
+                      <div><small>AI MODEL</small><strong>사용자 등록 YOLO PT</strong></div>
+                      <div><small>DETECTION RESULT</small><strong>종류 · 위치 · 신뢰도</strong></div>
+                      <div><small>USAGE</small><strong>기록 확인 · 성능 비교</strong></div>
+                    </footer>
                   </section>
                 </div>
               </section>
@@ -375,7 +412,7 @@ export function AuthScreen({
                   </section>
                 </div>
               </section>
-            ) : contentView === "notice" || contentView === "community" || contentView === "faq" ? (
+            ) : contentView === "notice" || contentView === "community" || contentView === "bug" || contentView === "faq" ? (
               <OceanBoardPage
                 key={contentView}
                 category={contentView === "community" ? "free" : contentView}
@@ -456,11 +493,10 @@ export function AuthScreen({
                 {!profileEditing && <div className="profile-view-enter"><div className="profile-identity">
                   <span>{authenticatedUser.name.slice(0, 1)}</span>
                   <div>
-                    <small>다시 만나 반갑습니다</small>
                     <strong>{authenticatedUser.name}님</strong>
                     <p>{authenticatedUser.email}</p>
                   </div>
-                  {authenticatedUser.role === "admin" ? <button className="profile-admin-badge" type="button" onClick={() => onWorkspaceNavigate?.("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11} />관리자</button> : <em><ShieldCheck size={11} />일반 회원</em>}
+                  {authenticatedUser.role === "admin" ? <div className="profile-admin-actions"><button className="profile-admin-badge" type="button" onClick={() => onWorkspaceNavigate?.("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11} />관리자</button><button className="profile-admin-badge" type="button" onClick={() => { window.location.href = "/presentation"; }} title="PPT 페이지로 이동"><Presentation size={11} />PPT</button></div> : <em><ShieldCheck size={11} />일반 회원</em>}
                 </div>
                 <div className="profile-activity" aria-label="나의 이용 현황">
                   <div><small>분석 기록</small><strong>{profileStats.analyses}<em>건</em></strong></div>

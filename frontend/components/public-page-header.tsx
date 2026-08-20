@@ -4,7 +4,7 @@ import { useState } from "react";
 import { BarChart3, Bell, CircleHelp, Clock3, ChevronDown, FileText, LogIn, Menu, MessageSquareText, ScanLine, X } from "lucide-react";
 import { BrandWordmark } from "./brand-wordmark";
 
-export type PublicView = "home" | "overview" | "development" | "notice" | "community" | "faq";
+export type PublicView = "home" | "overview" | "development" | "notice" | "community" | "bug" | "faq";
 
 type PublicPageHeaderProps = {
   activeView?: PublicView;
@@ -67,7 +67,7 @@ export function PublicPageHeader({ activeView = "home", onNavigate, onLogin }: P
             AI 성능 비교
           </button>
         </PublicNavGroup>
-        <PublicNavGroup label="게시판" active={activeView === "notice" || activeView === "community" || activeView === "faq"}>
+        <PublicNavGroup label="게시판" active={activeView === "notice" || activeView === "community" || activeView === "bug" || activeView === "faq"}>
           <button className={activeView === "notice" ? "active" : ""} onClick={() => handleNavigate("notice")}>
             <Bell size={16} />
             공지사항
@@ -75,6 +75,10 @@ export function PublicPageHeader({ activeView = "home", onNavigate, onLogin }: P
           <button className={activeView === "community" ? "active" : ""} onClick={() => handleNavigate("community")}>
             <MessageSquareText size={16} />
             자유게시판
+          </button>
+          <button className={activeView === "bug" ? "active" : ""} onClick={() => handleNavigate("bug")}>
+            <MessageSquareText size={16} />
+            버그 제보
           </button>
           <button className={activeView === "faq" ? "active" : ""} onClick={() => handleNavigate("faq")}>
             <CircleHelp size={16} />
