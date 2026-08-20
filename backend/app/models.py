@@ -90,6 +90,17 @@ class VideoAsset(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     fps: Mapped[float | None] = mapped_column(Float, nullable=True)
     frame_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    location_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    location_description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    location_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    location_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    coastal_eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True, index=True)
+    coast_distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    coastal_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
 
 
@@ -109,6 +120,7 @@ class Analysis(Base):
     processed_frames: Mapped[int] = mapped_column(Integer, default=0)
     avg_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     processing_fps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -118,6 +130,45 @@ class Analysis(Base):
     video: Mapped[VideoAsset] = relationship()
     class_stats: Mapped[list[ClassStat]] = relationship(cascade="all, delete-orphan")
     frame_metrics: Mapped[list[FrameMetric]] = relationship(cascade="all, delete-orphan")
+
+
+class RealtimeSession(Base):
+    __tablename__ = "realtime_sessions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("model_artifacts.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="running", index=True)
+    total_events: Mapped[int] = mapped_column(Integer, default=0)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    location_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    location_description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    coastal_eligible: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    coast_distance_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    model: Mapped[ModelArtifact] = relationship()
+    events: Mapped[list[RealtimeEvent]] = relationship(cascade="all, delete-orphan")
+
+
+class RealtimeEvent(Base):
+    __tablename__ = "realtime_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("realtime_sessions.id", ondelete="CASCADE"), index=True)
+    class_id: Mapped[int] = mapped_column(Integer)
+    class_name: Mapped[str] = mapped_column(String(120), index=True)
+    confidence: Mapped[float] = mapped_column(Float)
+    x1: Mapped[float] = mapped_column(Float)
+    y1: Mapped[float] = mapped_column(Float)
+    x2: Mapped[float] = mapped_column(Float)
+    y2: Mapped[float] = mapped_column(Float)
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, index=True)
+    evidence_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    protected: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
 
 class ClassStat(Base):

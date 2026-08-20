@@ -35,6 +35,9 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
     monkeypatch.setattr(main, "STORAGE_DIR", storage)
     monkeypatch.setattr("app.analysis_service.STORAGE_DIR", storage)
     monkeypatch.setattr(main, "run_analysis", lambda _analysis_id: None)
+    main.realtime_model_cache.clear()
+    with main.rate_limit_lock:
+        main.rate_limit_events.clear()
     main.app.dependency_overrides[main.get_db] = override_db
     test_client = TestClient(main.app)
     test_client.app.state.testing_session = testing_session
@@ -42,5 +45,8 @@ def client(tmp_path, monkeypatch) -> Iterator[TestClient]:
         yield test_client
     finally:
         test_client.close()
+        main.realtime_model_cache.clear()
+        with main.rate_limit_lock:
+            main.rate_limit_events.clear()
     main.app.dependency_overrides.clear()
     engine.dispose()

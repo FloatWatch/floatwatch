@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -33,8 +35,34 @@ class AnalysisCreate(BaseModel):
     frame_stride: int = Field(default=1, ge=1, le=30)
 
 
+class RealtimeSessionCreate(BaseModel):
+    model_id: int
+    latitude: float | None = Field(default=None, ge=32.8, le=38.7)
+    longitude: float | None = Field(default=None, ge=124.0, le=132.0)
+    location_name: str | None = Field(default=None, max_length=160)
+    location_description: str | None = Field(default=None, max_length=300)
+
+
+class RealtimeSessionUpdate(BaseModel):
+    status: str = Field(pattern="^(running|paused|completed)$")
+
+
+class RealtimeEventProtect(BaseModel):
+    protected: bool
+
+
+class MediaLocationUpdate(BaseModel):
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    location_name: str | None = Field(default=None, max_length=160)
+    location_description: str | None = Field(default=None, max_length=300)
+    captured_at: datetime | None = None
+    location_source: str | None = Field(default=None, pattern="^(metadata|manual|none)$")
+    location_confirmed: bool = False
+
+
 class ContentCreate(BaseModel):
-    category: str = Field(pattern="^(free|notice|faq)$")
+    category: str = Field(pattern="^(free|bug|notice|faq)$")
     title: str = Field(min_length=2, max_length=200)
     content: str = Field(min_length=2, max_length=20000)
     pinned: bool = False
