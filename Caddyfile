@@ -1,0 +1,4 @@
+https://{$TLS_HOST} {
+	tls internal
+	reverse_proxy frontend:3000
+}
