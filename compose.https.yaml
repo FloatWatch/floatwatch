@@ -1,0 +1,21 @@
+services:
+  frontend:
+    ports: !override []
+
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      TLS_HOST: ${TLS_HOST:-localhost}
+    depends_on:
+      - frontend
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3001}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:
