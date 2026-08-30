@@ -111,10 +111,6 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
               <ScanLine size={16} />
               탐색 기록
             </button>
-            <button onClick={onLogin}>
-              <BarChart3 size={16} />
-              AI 성능 비교
-            </button>
           </PublicNavGroup>
 
           <PublicNavGroup label="게시판" active={view === "notice" || view === "community" || view === "bug" || view === "faq"}>
@@ -133,6 +129,10 @@ export function PublicHome({ onLogin }: { onLogin: () => void }) {
             <button className={view === "faq" ? "active" : ""} onClick={() => navigate("faq")}>
               <CircleHelp size={16} />
               자주 묻는 질문
+            </button>
+            <button onClick={onLogin}>
+              <FileText size={16} />
+              1:1 문의
             </button>
           </PublicNavGroup>
         </nav>

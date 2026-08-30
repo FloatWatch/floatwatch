@@ -43,7 +43,7 @@ export default function Slide13() {
         </div>
       </div>
 
-      <div className={styles.pageNumber} style={{ color: 'rgba(221,235,238,0.55)' }}>11</div>
+      <div className={styles.pageNumber} style={{ color: 'rgba(221,235,238,0.55)' }}>14</div>
     </div>
   );
 }

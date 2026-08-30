@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronLeft, ChevronRight, Download, Italic, LoaderCircle, Paperclip, PenLine, Pencil, Search, Send, Star, Trash2, Underline, X } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Bold, ChevronDown, ChevronLeft, ChevronRight, Download, Italic, LoaderCircle, MessageCircle, Paperclip, PenLine, Pencil, Search, Send, Star, Trash2, Underline, X } from "lucide-react";
 import { API_URL, api } from "@/lib/api";
 import type { ContentItem, User } from "@/lib/types";
 
@@ -189,7 +189,7 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
     <section className={`ocean-board-page ocean-board-page--${category} page-content-transition`}>
       <header className="ocean-board-heading">
         <div><h2>{meta.title}</h2><p>{category === "notice" ? "서비스 이용 안내와 주요 변경 사항을 확인할 수 있습니다. 제목을 선택하면 공지 내용을 자세히 볼 수 있습니다." : meta.description}</p></div>
-        <div className="ocean-board-status"><span><strong>{items.length}</strong>개의 게시물</span></div>
+        <div className="ocean-board-status"><span><em>총</em><strong>{items.length}</strong><i>개의 게시물</i></span></div>
       </header>
 
       <div className="ocean-board-content">
@@ -204,9 +204,9 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
             {pageItems.map((item, index) => (
               <article className={openFaq === item.id ? "open" : ""} key={item.id}>
                 <button type="button" onClick={() => setOpenFaq(openFaq === item.id ? null : item.id)}>
-                  <span>{String((page - 1) * 10 + index + 1).padStart(2, "0")}</span><strong>{item.title}</strong><ChevronDown size={19} />
+                  <span className="ocean-faq-question-mark"><b>Q</b><small>{String((page - 1) * 10 + index + 1).padStart(2, "0")}</small></span><strong>{item.title}</strong><ChevronDown size={19} />
                 </button>
-                <div className="ocean-faq-answer"><div dangerouslySetInnerHTML={{ __html: item.content }} />{item.attachments?.length > 0 && <div className="ocean-faq-files">{item.attachments.map((file) => <AttachmentLink file={file} key={file.id} />)}</div>}</div>
+                <div className="ocean-faq-answer"><div className="ocean-faq-answer-content"><span><b>A</b></span><div dangerouslySetInnerHTML={{ __html: item.content }} /></div>{item.attachments?.length > 0 && <div className="ocean-faq-files">{item.attachments.map((file) => <AttachmentLink file={file} key={file.id} />)}</div>}</div>
                 {isAdmin && <AdminActions onEdit={() => startEdit(item)} onDelete={() => remove(item)} />}
               </article>
             ))}
@@ -218,7 +218,7 @@ export function OceanBoardPage({ category, user, onLogin }: { category: BoardCat
             <header><span>{selected.pinned ? "중요 안내" : meta.title}</span><h3>{selected.title}</h3><p>{selected.author?.name ?? "FloatWatch"} · {formatDate(selected.created_at)} · 조회 {selected.views}</p></header>
             <div className="ocean-reader-body" dangerouslySetInnerHTML={{ __html: selected.content }} />
             {selected.attachments?.length > 0 && <div className="ocean-reader-files"><strong><Paperclip size={14} />첨부파일</strong>{selected.attachments.map((file) => <AttachmentLink file={file} key={file.id} />)}</div>}
-            {(category === "free" || category === "bug") && <section className="ocean-comments"><header><strong>댓글</strong><span>{selected.comments?.length ?? 0}</span></header><form onSubmit={submitComment}><input name="comment" required maxLength={2000} placeholder={user ? category === "bug" ? "추가 상황이나 처리 의견을 입력하세요" : "댓글을 입력하세요" : "로그인 후 댓글을 작성할 수 있습니다"} /><button type="submit"><Send size={15} />등록</button></form><div>{selected.comments?.map((comment) => <article key={comment.id}><div><strong>{comment.author?.name ?? "탈퇴한 회원"}</strong><time>{formatDateTime(comment.created_at)}</time></div><p>{comment.content}</p>{(isAdmin || comment.author?.id === user?.id) && <button type="button" onClick={() => removeComment(comment.id)}><Trash2 size={13} />삭제</button>}</article>)}{!selected.comments?.length && <p className="ocean-comments-empty">{category === "bug" ? "등록된 처리 의견이 없습니다." : "첫 댓글을 남겨보세요."}</p>}</div></section>}
+            {(category === "free" || category === "bug") && <section className="ocean-comments"><header><span className="ocean-comments-icon"><MessageCircle size={17}/></span><div><strong>{category === "bug" ? "처리 의견" : "댓글"}</strong><small>게시글에 대한 의견을 자유롭게 남겨주세요.</small></div><em>{selected.comments?.length ?? 0}</em></header><form onSubmit={submitComment}><textarea name="comment" rows={3} required maxLength={2000} disabled={!user} placeholder={user ? category === "bug" ? "추가 상황이나 처리 의견을 입력하세요" : "댓글을 입력하세요" : "로그인 후 댓글을 작성할 수 있습니다"}/><button type="submit" disabled={!user}><Send size={15}/><span>댓글 등록</span></button></form><div className="ocean-comments-list">{selected.comments?.map((comment) => <article key={comment.id}><span className="ocean-comment-avatar">{(comment.author?.name ?? "?").slice(0,1)}</span><div className="ocean-comment-content"><header><strong>{comment.author?.name ?? "탈퇴한 회원"}</strong><time>{formatDateTime(comment.created_at)}</time></header><p>{comment.content}</p></div>{(isAdmin || comment.author?.id === user?.id) && <button type="button" onClick={() => removeComment(comment.id)}><Trash2 size={13}/><span>삭제</span></button>}</article>)}{!selected.comments?.length && <div className="ocean-comments-empty"><MessageCircle size={22}/><strong>{category === "bug" ? "등록된 처리 의견이 없습니다." : "아직 댓글이 없습니다."}</strong><span>{category === "bug" ? "처리 과정이나 추가 상황을 남겨주세요." : "첫 번째 댓글을 남겨 대화를 시작해 보세요."}</span></div>}</div></section>}
             {(isAdmin || ((category === "free" || category === "bug") && selected.author?.id === user?.id)) && <AdminActions showPin={isAdmin && category === "notice"} pinned={selected.pinned} onPin={() => togglePinned(selected)} onEdit={() => startEdit(selected)} onDelete={() => remove(selected)} />}
           </article>
         ) : (

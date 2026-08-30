@@ -259,3 +259,7 @@ temp/
 Thumbs.db
 AGENTS.md
 .local-guides/
+
+# Local deployment helpers, browser state and downloaded binaries
+deploy/
+tools/

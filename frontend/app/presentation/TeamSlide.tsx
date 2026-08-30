@@ -3,7 +3,7 @@ import styles from './presentation.module.css';
 const members = [
   {
     name: '이지건',
-    initials: 'JG',
+    initials: 'JK',
     position: 'TEAM LEADER',
     roles: ['조장', 'Frontend', 'Backend'],
     accent: '#087f8c',
@@ -26,14 +26,14 @@ const members = [
     name: '허유진',
     initials: 'YJ',
     position: 'AI ENGINEER',
-    roles: ['데이터셋 구성', 'YOLOv11s Fine-tuning'],
+    roles: ['데이터셋 구성', 'YOLOv8s Fine-tuning', 'YOLO11s Fine-tuning'],
     accent: '#31979f',
   },
   {
     name: '이승연',
     initials: 'SY',
     position: 'AI ENGINEER',
-    roles: ['데이터셋 구성', 'YOLOv8m Fine-tuning'],
+    roles: ['데이터셋 구성', 'YOLO26s Fine-tuning', 'RT-DETR-L Fine-tuning'],
     accent: '#31979f',
   },
 ];
@@ -90,7 +90,7 @@ export default function TeamSlide() {
                 </h2>
               </div>
 
-              <div style={{ height: 1, background: '#e2e9e8', marginBottom: 16 }} />
+              <div style={{ height: 1, background: '#e56b3f', marginBottom: 16 }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                 {member.roles.map((role) => (
                   <div key={role} style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#263f3d', fontSize: 16, fontWeight: 650, lineHeight: 1.35 }}>

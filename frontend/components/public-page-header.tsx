@@ -62,10 +62,6 @@ export function PublicPageHeader({ activeView = "home", onNavigate, onLogin }: P
             <BarChart3 size={16} />
             탐색 기록
           </button>
-          <button onClick={handleLogin}>
-            <ScanLine size={16} />
-            AI 성능 비교
-          </button>
         </PublicNavGroup>
         <PublicNavGroup label="게시판" active={activeView === "notice" || activeView === "community" || activeView === "bug" || activeView === "faq"}>
           <button className={activeView === "notice" ? "active" : ""} onClick={() => handleNavigate("notice")}>
@@ -83,6 +79,10 @@ export function PublicPageHeader({ activeView = "home", onNavigate, onLogin }: P
           <button className={activeView === "faq" ? "active" : ""} onClick={() => handleNavigate("faq")}>
             <CircleHelp size={16} />
             자주 묻는 질문
+          </button>
+          <button onClick={handleLogin}>
+            <FileText size={16} />
+            1:1 문의
           </button>
         </PublicNavGroup>
       </nav>

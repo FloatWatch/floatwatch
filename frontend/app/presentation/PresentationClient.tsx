@@ -2,6 +2,7 @@
 // FloatWatch — 프로젝트 발표 (슬라이드쇼 모드)
 // ← → 화살표, 클릭, 스페이스바로 슬라이드 이동
 import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import Slide1 from './slide1';
 import Slide2 from './slide2';
 import TeamSlide from './TeamSlide';
@@ -10,7 +11,10 @@ import Slide3 from './slide3';
 import DemandSurveySlide from './DemandSurveySlide';
 import Slide5 from './slide5';
 import FeatureOverviewSlide from './FeatureOverviewSlide';
-import Slide7 from './slide7';
+import AiIterationStorySlide from './AiIterationStorySlide';
+import AiExpansionJourneySlide from './AiExpansionJourneySlide';
+import AiConfusion3DSlide from './AiConfusion3DSlide';
+import LiveDemoSlide from './LiveDemoSlide';
 import Slide12 from './slide12';
 import Slide13 from './slide13';
 import PptxDownload from './PptxDownload';
@@ -28,7 +32,10 @@ const slides: React.ReactNode[] = [
   <DemandSurveySlide key="demand" />,
   <Slide5 key="s5" />,
   <FeatureOverviewSlide key="features" />,
-  <Slide7 key="s7" />,
+  <AiIterationStorySlide key="ai-journey" />,
+  <AiExpansionJourneySlide key="ai-expansion-journey" />,
+  <AiConfusion3DSlide key="ai-confusion-3d" />,
+  <LiveDemoSlide key="live-demo" />,
   <Slide12 key="s12" />,
   <Slide13 key="s13" />,
 ];
@@ -107,7 +114,7 @@ export default function Presentation() {
 
   // 클릭: 왼쪽 20% = 이전, 나머지 = 다음
   const handleClick = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('[data-nav]')) return;
+    if ((e.target as HTMLElement).closest('[data-nav], [data-slide-interactive]')) return;
     const x = e.clientX / window.innerWidth;
     x < 0.2 ? goPrev() : goNext();
   };
@@ -142,6 +149,41 @@ export default function Presentation() {
 
       {/* 레이저 포인터 */}
       <LaserPointer />
+
+      <button
+        data-nav="true"
+        type="button"
+        aria-label="이전 페이지로 돌아가기"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (window.history.length > 1) window.history.back();
+          else window.location.href = '/';
+        }}
+        style={{
+          position: 'fixed',
+          top: 22,
+          right: 24,
+          zIndex: 1200,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          height: 42,
+          padding: '0 15px',
+          border: '1px solid rgba(255,255,255,.34)',
+          borderRadius: 999,
+          background: 'rgba(16,39,43,.78)',
+          color: '#fff',
+          fontSize: 14,
+          fontWeight: 800,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+          boxShadow: '0 8px 24px rgba(0,0,0,.2)',
+          backdropFilter: 'blur(8px)',
+        }}
+      >
+        <ArrowLeft size={17} />
+        뒤로가기
+      </button>
 
       {/* PPTX 다운로드 버튼 */}
       <PptxDownload slides={slides} />

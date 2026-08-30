@@ -21,7 +21,8 @@ function sanitizeReturnPath(raw: string | null) {
 }
 
 function parseEntryView(raw: string | null): WorkspaceView | null {
-  const views: WorkspaceView[] = ["home", "overview", "development", "analysis", "records", "compare", "free", "bug", "inquiry", "faq", "notice", "admin"];
+  if (raw === "compare") return "records";
+  const views: WorkspaceView[] = ["home", "overview", "development", "analysis", "records", "free", "bug", "inquiry", "faq", "notice", "admin"];
   return views.includes(raw as WorkspaceView) ? raw as WorkspaceView : null;
 }
 
@@ -162,6 +163,7 @@ export default function AuthPage() {
       }}
         onHeaderLogin={() => openLoginPanelView()}
         onStartAnalysis={() => openLoginPanelView("analysis")}
+        onWorkspaceNavigate={(view) => openLoginPanelView(view)}
         showPanelToggle={false}
       /><FloatWatchChat loggedIn={false}/></>
   );

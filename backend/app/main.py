@@ -27,7 +27,7 @@ from PIL import Image
 from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.orm import Session as DbSession
 
 from .analysis_service import (
@@ -44,7 +44,7 @@ from .coastal import COASTAL_DISTANCE_METERS, classify_coastal_location
 from .database import Base, STORAGE_DIR, SessionLocal, engine
 from .models import Analysis, AuditLog, ContentAttachment, ContentComment, ContentItem, Inquiry, InquiryAttachment, ModelArtifact, OAuthIdentity, RealtimeEvent, RealtimeSession, Session, User, VideoAsset
 from .oauth import PROVIDERS, authorization_url, exchange_profile
-from .schemas import AccountDelete, AnalysisCreate, CommentCreate, ContentCreate, ContentUpdate, InquiryAnswer, InquiryCreate, LoginBody, MediaLocationUpdate, PasswordChange, ProfileUpdate, RealtimeEventProtect, RealtimeSessionCreate, RealtimeSessionUpdate, RegisterBody, UserAdminUpdate
+from .schemas import AccountDelete, AnalysisBatchCreate, AnalysisCreate, CommentCreate, ContentCreate, ContentUpdate, InquiryAnswer, InquiryCreate, LoginBody, MediaLocationUpdate, PasswordChange, ProfileUpdate, RealtimeEventProtect, RealtimeSessionCreate, RealtimeSessionUpdate, RegisterBody, UserAdminUpdate
 from .security import hash_password, new_session_token, token_digest, verify_password
 from .storage_security import InsufficientStorageError, ensure_disk_capacity, ensure_within_storage, normalize_upload_name, safe_unlink, storage_path
 
@@ -62,7 +62,8 @@ OAUTH_STATE_COOKIE = "floatwatch_oauth_state"
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").rstrip("/")
 logger = logging.getLogger("floatwatch")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(name)s %(message)s")
-analysis_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="floatwatch-analysis")
+ANALYSIS_WORKERS = max(1, min(4, int(os.getenv("ANALYSIS_WORKERS", "4"))))
+analysis_executor = ThreadPoolExecutor(max_workers=ANALYSIS_WORKERS, thread_name_prefix="floatwatch-analysis")
 analysis_creation_lock = Lock()
 analysis_queue_lock = Lock()
 analysis_futures: dict[int, Future[None]] = {}
@@ -76,6 +77,8 @@ REALTIME_EVIDENCE_MAX_PER_SESSION = int(os.getenv("REALTIME_EVIDENCE_MAX_PER_SES
 REALTIME_EVIDENCE_INTERVAL_SECONDS = int(os.getenv("REALTIME_EVIDENCE_INTERVAL_SECONDS", "10"))
 ORPHAN_FILE_GRACE_SECONDS = int(os.getenv("ORPHAN_FILE_GRACE_SECONDS", "3600"))
 MAX_SERVER_ANALYSIS_JOBS = int(os.getenv("MAX_SERVER_ANALYSIS_JOBS", "20"))
+COMPARISON_MODEL_KEYS = ("yolov8s", "yolov11s", "yolov26s", "rt-detr")
+COMPARISON_MODEL_NAMES = {"yolov8s": "YOLOv8s", "yolov11s": "YOLO11s", "yolov26s": "YOLO26s", "rt-detr": "RT-DETR"}
 RATE_LIMIT_RULES = {
     "login_account": (10, 60),
     "login_ip": (30, 60),
@@ -480,10 +483,19 @@ def initialize_app() -> list[int]:
             connection.execute(text("ALTER TABLE model_artifacts ADD COLUMN quarantine_reason TEXT"))
         if "quarantined_at" not in model_columns:
             connection.execute(text("ALTER TABLE model_artifacts ADD COLUMN quarantined_at DATETIME"))
+        if "model_key" not in model_columns:
+            connection.execute(text("ALTER TABLE model_artifacts ADD COLUMN model_key VARCHAR(30)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_model_artifacts_model_key ON model_artifacts (model_key)"))
+        if "is_representative" not in model_columns:
+            connection.execute(text("ALTER TABLE model_artifacts ADD COLUMN is_representative BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_model_artifacts_is_representative ON model_artifacts (is_representative)"))
         analysis_columns = {row[1] for row in connection.execute(text("PRAGMA table_info(analyses)"))}
         if "error_code" not in analysis_columns:
             connection.execute(text("ALTER TABLE analyses ADD COLUMN error_code VARCHAR(40)"))
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_analyses_error_code ON analyses (error_code)"))
+        if "batch_id" not in analysis_columns:
+            connection.execute(text("ALTER TABLE analyses ADD COLUMN batch_id VARCHAR(36)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_analyses_batch_id ON analyses (batch_id)"))
         video_columns = {row[1] for row in connection.execute(text("PRAGMA table_info(video_assets)"))}
         for column, definition in {
             "latitude": "FLOAT",
@@ -878,7 +890,7 @@ def user_owned_paths(db: DbSession, user_id: int) -> list[Path]:
 
 def model_json(item: ModelArtifact) -> dict:
     return {
-        "id": item.id, "name": item.name, "original_name": item.original_name,
+        "id": item.id, "name": COMPARISON_MODEL_NAMES.get(item.model_key, item.name), "model_key": item.model_key, "is_representative": item.is_representative, "original_name": item.original_name,
         "size_bytes": item.size_bytes, "task": item.task,
         "class_names": json.loads(item.class_names_json) if item.class_names_json else [],
         "quarantined": item.quarantined,
@@ -886,6 +898,58 @@ def model_json(item: ModelArtifact) -> dict:
         "quarantined_at": item.quarantined_at,
         "created_at": item.created_at,
     }
+
+
+def admin_default_models(db: DbSession) -> dict[str, ModelArtifact]:
+    """Return the newest usable administrator PT for each supported model family."""
+    candidates = db.scalars(
+        select(ModelArtifact)
+        .join(User, ModelArtifact.user_id == User.id)
+        .where(
+            User.role == "admin",
+            User.active.is_(True),
+            ModelArtifact.model_key.in_(COMPARISON_MODEL_KEYS),
+            ModelArtifact.quarantined.is_(False),
+        )
+        .order_by(ModelArtifact.created_at.desc(), ModelArtifact.id.desc())
+    ).all()
+    defaults: dict[str, ModelArtifact] = {}
+    for item in candidates:
+        if item.model_key and item.model_key not in defaults:
+            defaults[item.model_key] = item
+    return defaults
+
+
+def default_models_for_user(db: DbSession, user: User) -> dict[str, ModelArtifact]:
+    """Prefer administrator defaults and fall back to the user's representative PTs."""
+    defaults = admin_default_models(db)
+    own_models = db.scalars(
+        select(ModelArtifact)
+        .where(
+            ModelArtifact.user_id == user.id,
+            ModelArtifact.model_key.in_(COMPARISON_MODEL_KEYS),
+            ModelArtifact.is_representative.is_(True),
+            ModelArtifact.quarantined.is_(False),
+        )
+        .order_by(ModelArtifact.created_at.desc(), ModelArtifact.id.desc())
+    ).all()
+    for item in own_models:
+        if item.model_key and item.model_key not in defaults:
+            defaults[item.model_key] = item
+    return defaults
+
+
+def accessible_model(db: DbSession, user: User, model_id: int) -> ModelArtifact | None:
+    """Allow a user to run their own PT or a PT supplied by an active administrator."""
+    return db.scalar(
+        select(ModelArtifact)
+        .join(User, ModelArtifact.user_id == User.id)
+        .where(
+            ModelArtifact.id == model_id,
+            ModelArtifact.quarantined.is_(False),
+            or_(ModelArtifact.user_id == user.id, (User.role == "admin") & User.active.is_(True)),
+        )
+    )
 
 
 def video_json(item: VideoAsset) -> dict:
@@ -903,17 +967,17 @@ def video_json(item: VideoAsset) -> dict:
     }
 
 
-def analysis_json(item: Analysis, detail: bool = False) -> dict:
+def analysis_json(item: Analysis, detail: bool = False, admin_access: bool = False) -> dict:
     public_status = "cancelled" if item.status == "failed" and item.error_code == "USER_CANCELLED" else item.status
     data = {
-        "id": item.id, "status": public_status, "confidence": item.confidence,
+        "id": item.id, "batch_id": item.batch_id, "status": public_status, "confidence": item.confidence,
         "frame_stride": item.frame_stride, "progress": item.progress,
         "total_detections": item.total_detections, "processed_frames": item.processed_frames,
         "avg_confidence": item.avg_confidence, "processing_fps": item.processing_fps,
         "error_code": item.error_code, "error_message": item.error_message, "created_at": item.created_at,
         "completed_at": item.completed_at,
         "model": model_json(item.model), "video": video_json(item.video),
-        "output_url": f"/analyses/{item.id}/output" if item.output_path else None,
+        "output_url": f"/{'admin/' if admin_access else ''}analyses/{item.id}/output" if item.output_path else None,
     }
     if detail:
         data["class_stats"] = [
@@ -1251,7 +1315,7 @@ def admin_update_user(user_id: int, body: UserAdminUpdate, admin: User = Depends
 @app.get("/admin/analyses")
 def admin_list_analyses(_admin: User = Depends(admin_user), db: DbSession = Depends(get_db)) -> list[dict]:
     items = db.scalars(select(Analysis).order_by(Analysis.id.desc())).all()
-    return [{**analysis_json(item, detail=True), "owner": {"id": item.user_id, "name": db.get(User, item.user_id).name}} for item in items]
+    return [{**analysis_json(item, detail=True, admin_access=True), "owner": {"id": item.user_id, "name": db.get(User, item.user_id).name}} for item in items]
 
 
 @app.get("/admin/analyses-page")
@@ -1273,7 +1337,27 @@ def admin_analyses_page(
     items = db.scalars(query.order_by(Analysis.id.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     count = lambda condition: db.scalar(select(func.count(Analysis.id)).where(condition)) or 0
     counts = {"all": count(Analysis.id > 0), "active": count(active_condition), "completed": count(Analysis.status == "completed"), "failed": count(failed_condition), "cancelled": count(cancelled_condition)}
-    return {"items": [{**analysis_json(item, detail=True), "owner": {"id": item.user_id, "name": (db.get(User, item.user_id).name if db.get(User, item.user_id) else "탈퇴한 사용자")}} for item in items], "total": total, "page": page, "page_size": page_size, "pages": max(1, (total + page_size - 1) // page_size), "counts": counts}
+    return {"items": [{**analysis_json(item, detail=True, admin_access=True), "owner": {"id": item.user_id, "name": (db.get(User, item.user_id).name if db.get(User, item.user_id) else "탈퇴한 사용자")}} for item in items], "total": total, "page": page, "page_size": page_size, "pages": max(1, (total + page_size - 1) // page_size), "counts": counts}
+
+
+@app.get("/admin/analyses/{analysis_id}")
+def admin_get_analysis(analysis_id: int, _admin: User = Depends(admin_user), db: DbSession = Depends(get_db)) -> dict:
+    item = db.get(Analysis, analysis_id)
+    if not item:
+        raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
+    owner = db.get(User, item.user_id)
+    return {
+        **analysis_json(item, detail=True, admin_access=True),
+        "owner": {"id": item.user_id, "name": owner.name if owner else "탈퇴한 사용자"},
+    }
+
+
+@app.get("/admin/analyses/{analysis_id}/output")
+def admin_analysis_output(analysis_id: int, download: bool = False, _admin: User = Depends(admin_user), db: DbSession = Depends(get_db)) -> FileResponse:
+    item = db.get(Analysis, analysis_id)
+    if not item:
+        raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
+    return analysis_output_response(item, download)
 
 
 @app.get("/admin/realtime-sessions")
@@ -1540,7 +1624,7 @@ def my_summary(user: User = Depends(current_user), db: DbSession = Depends(get_d
 
 @app.get("/models")
 def list_models(user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> list[dict]:
-    items = db.scalars(select(ModelArtifact).where(ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)).order_by(ModelArtifact.id.desc())).all()
+    items = list(default_models_for_user(db, user).values())
     available: list[ModelArtifact] = []
     changed = False
     for item in items:
@@ -1552,7 +1636,14 @@ def list_models(user: User = Depends(current_user), db: DbSession = Depends(get_
             available.append(item)
     if changed:
         db.commit()
-    return [model_json(item) for item in available]
+    defaults = {item.model_key: item for item in available if item.model_key in COMPARISON_MODEL_KEYS}
+    return sorted((model_json(item) for item in defaults.values()), key=lambda item: item["created_at"], reverse=True)
+
+
+@app.get("/models/library")
+def list_model_library(user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> list[dict]:
+    items = db.scalars(select(ModelArtifact).where(ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)).order_by(ModelArtifact.id.desc())).all()
+    return [model_json(item) for item in items]
 
 
 @app.get("/models/quarantined")
@@ -1568,6 +1659,7 @@ def list_quarantined_models(user: User = Depends(current_user), db: DbSession = 
 @app.post("/models", status_code=201)
 async def upload_model(
     name: str,
+    model_key: str = "yolov8s",
     file: UploadFile = File(...),
     user: User = Depends(current_user),
     db: DbSession = Depends(get_db),
@@ -1576,7 +1668,9 @@ async def upload_model(
     original_name = normalize_upload_name(file.filename, "model.pt")
     if Path(original_name).suffix.lower() != ".pt":
         raise HTTPException(400, ".pt 모델 파일만 업로드할 수 있습니다.")
-    model_name = name.strip()[:120]
+    if model_key not in COMPARISON_MODEL_KEYS:
+        raise HTTPException(400, "지원 모델은 yolov8s, yolov11s, yolov26s, rt-detr입니다.")
+    model_name = COMPARISON_MODEL_NAMES[model_key]
     if not model_name:
         raise HTTPException(400, "모델 이름을 입력해 주세요.")
     target = storage_path(STORAGE_DIR, "models", str(user.id), f"{uuid.uuid4().hex}.pt")
@@ -1585,11 +1679,27 @@ async def upload_model(
         target.unlink(missing_ok=True)
         raise HTTPException(400, "유효한 PT 모델 파일인지 확인해 주세요.")
     validate_pt_container(target)
-    item = ModelArtifact(user_id=user.id, name=model_name, original_name=original_name, path=str(target), size_bytes=size)
+    has_representative = db.scalar(select(func.count(ModelArtifact.id)).where(ModelArtifact.user_id == user.id, ModelArtifact.model_key == model_key, ModelArtifact.is_representative.is_(True))) or 0
+    item = ModelArtifact(user_id=user.id, name=model_name, model_key=model_key, is_representative=not has_representative, original_name=original_name, path=str(target), size_bytes=size)
     db.add(item)
     db.commit()
     db.refresh(item)
     logger.info("event=model_uploaded user_id=%s model_id=%s size_bytes=%s", user.id, item.id, size)
+    return model_json(item)
+
+
+@app.patch("/models/{model_id}/representative")
+def select_representative_model(model_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> dict:
+    item = db.scalar(select(ModelArtifact).where(ModelArtifact.id == model_id, ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)))
+    if not item or item.model_key not in COMPARISON_MODEL_KEYS:
+        raise HTTPException(404, "대표 모델로 지정할 모델을 찾을 수 없습니다.")
+    require_model_file(item, db)
+    current = db.scalars(select(ModelArtifact).where(ModelArtifact.user_id == user.id, ModelArtifact.model_key == item.model_key, ModelArtifact.is_representative.is_(True))).all()
+    for model in current:
+        model.is_representative = False
+    item.is_representative = True
+    db.commit()
+    db.refresh(item)
     return model_json(item)
 
 
@@ -1951,7 +2061,7 @@ def protect_realtime_evidence(event_id: int, body: RealtimeEventProtect, user: U
 
 @app.post("/realtime/sessions", status_code=201)
 def create_realtime_session(body: RealtimeSessionCreate, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> dict:
-    model = db.scalar(select(ModelArtifact).where(ModelArtifact.id == body.model_id, ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)))
+    model = accessible_model(db, user, body.model_id)
     if not model:
         raise HTTPException(404, "사용 가능한 AI 모델을 찾을 수 없습니다.")
     require_model_file(model, db)
@@ -2003,13 +2113,7 @@ async def realtime_detect(
     db: DbSession = Depends(get_db),
 ) -> dict:
     enforce_rate_limit("realtime_detect", str(user.id))
-    model_artifact = db.scalar(
-        select(ModelArtifact).where(
-            ModelArtifact.id == model_id,
-            ModelArtifact.user_id == user.id,
-            ModelArtifact.quarantined.is_(False),
-        )
-    )
+    model_artifact = accessible_model(db, user, model_id)
     if not model_artifact:
         raise HTTPException(404, "사용 가능한 AI 모델을 찾을 수 없습니다.")
     live_session = None
@@ -2145,7 +2249,7 @@ def create_analysis(
     db: DbSession = Depends(get_db),
 ) -> dict:
     enforce_rate_limit("analysis", str(user.id))
-    model = db.scalar(select(ModelArtifact).where(ModelArtifact.id == body.model_id, ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)))
+    model = accessible_model(db, user, body.model_id)
     video = db.scalar(select(VideoAsset).where(VideoAsset.id == body.video_id, VideoAsset.user_id == user.id))
     if not model or not video:
         raise HTTPException(404, "모델 또는 동영상을 찾을 수 없습니다.")
@@ -2175,6 +2279,43 @@ def create_analysis(
     return analysis_json(item)
 
 
+@app.post("/analysis-batches", status_code=202)
+def create_analysis_batch(body: AnalysisBatchCreate, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> dict:
+    """Queue all four fixed models with identical media and settings."""
+    enforce_rate_limit("analysis", str(user.id))
+    video = db.scalar(select(VideoAsset).where(VideoAsset.id == body.video_id, VideoAsset.user_id == user.id))
+    if not video:
+        raise HTTPException(404, "분석 미디어를 찾을 수 없습니다.")
+    models_by_key = default_models_for_user(db, user)
+    missing_keys = [key for key in COMPARISON_MODEL_KEYS if key not in models_by_key]
+    if not models_by_key:
+        raise HTTPException(409, "분석 가능한 대표 PT가 없습니다. 모델 관리에서 하나 이상의 대표 PT를 지정해 주세요.")
+    for model in models_by_key.values():
+        require_model_file(model, db)
+    required_bytes = max(64 * 1024 * 1024, video.size_bytes * ANALYSIS_DISK_MULTIPLIER) * len(models_by_key)
+    try:
+        ensure_disk_capacity(STORAGE_DIR, required_bytes, MIN_FREE_DISK_BYTES)
+    except InsufficientStorageError as exc:
+        raise HTTPException(507, "네 모델의 결과를 저장할 디스크 공간이 부족합니다.") from exc
+    with analysis_creation_lock:
+        active = db.scalar(select(Analysis).where(Analysis.user_id == user.id, Analysis.status.in_(("queued", "processing"))).limit(1))
+        if active:
+            raise HTTPException(409, f"이미 진행 중인 비교 분석이 있습니다. 분석 #{active.id}을 확인해 주세요.")
+        server_jobs = db.scalar(select(func.count(Analysis.id)).where(Analysis.status.in_(("queued", "processing")))) or 0
+        if server_jobs + len(models_by_key) > MAX_SERVER_ANALYSIS_JOBS:
+            raise HTTPException(503, "현재 분석 대기열이 많습니다. 잠시 후 다시 시도해 주세요.", headers={"Retry-After": "30"})
+        batch_id = str(uuid.uuid4())
+        items = [Analysis(user_id=user.id, batch_id=batch_id, model_id=models_by_key[key].id, video_id=video.id, confidence=body.confidence, frame_stride=body.frame_stride) for key in COMPARISON_MODEL_KEYS if key in models_by_key]
+        db.add_all(items)
+        db.commit()
+        for item in items:
+            db.refresh(item)
+    for item in items:
+        enqueue_analysis(item.id)
+    logger.info("event=analysis_batch_queued user_id=%s batch_id=%s media_id=%s", user.id, batch_id, video.id)
+    return {"batch_id": batch_id, "analyses": [analysis_json(item) for item in items], "missing_models": [{"model_key": key, "name": COMPARISON_MODEL_NAMES[key]} for key in missing_keys]}
+
+
 @app.post("/analyses/{analysis_id}/retry", status_code=202)
 def retry_analysis(analysis_id: int, user: User = Depends(current_user), db: DbSession = Depends(get_db)) -> dict:
     enforce_rate_limit("analysis", str(user.id))
@@ -2183,7 +2324,7 @@ def retry_analysis(analysis_id: int, user: User = Depends(current_user), db: DbS
         raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
     if source.status not in {"failed", "cancelled", "completed"}:
         raise HTTPException(409, "진행 중인 분석은 다시 시작할 수 없습니다.")
-    model = db.scalar(select(ModelArtifact).where(ModelArtifact.id == source.model_id, ModelArtifact.user_id == user.id, ModelArtifact.quarantined.is_(False)))
+    model = accessible_model(db, user, source.model_id)
     video = db.scalar(select(VideoAsset).where(VideoAsset.id == source.video_id, VideoAsset.user_id == user.id))
     if not model:
         raise HTTPException(409, "기존 모델을 사용할 수 없습니다. 새 모델을 등록한 뒤 다시 시도해 주세요.")
@@ -2266,6 +2407,10 @@ def analysis_output(analysis_id: int, download: bool = False, user: User = Depen
     item = db.scalar(select(Analysis).where(Analysis.id == analysis_id, Analysis.user_id == user.id))
     if not item:
         raise HTTPException(404, "분석 기록을 찾을 수 없습니다.")
+    return analysis_output_response(item, download)
+
+
+def analysis_output_response(item: Analysis, download: bool = False) -> FileResponse:
     if item.status != "completed":
         raise HTTPException(409, "완료되지 않은 분석의 결과는 열거나 다운로드할 수 없습니다.")
     if not item.output_path:

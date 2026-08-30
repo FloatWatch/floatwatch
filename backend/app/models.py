@@ -68,6 +68,8 @@ class ModelArtifact(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    model_key: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    is_representative: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     original_name: Mapped[str] = mapped_column(String(255))
     path: Mapped[str] = mapped_column(Text)
     size_bytes: Mapped[int] = mapped_column(Integer)
@@ -108,6 +110,7 @@ class Analysis(Base):
     __tablename__ = "analyses"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     model_id: Mapped[int] = mapped_column(ForeignKey("model_artifacts.id"))
     video_id: Mapped[int] = mapped_column(ForeignKey("video_assets.id"))

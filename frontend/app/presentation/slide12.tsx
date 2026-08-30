@@ -5,26 +5,26 @@ const roadmap = [
   {
     phase: 'STEP 01',
     period: '단기 · 모델 고도화',
-    title: '더 정확한 탐지',
+    title: '더 정확한 4개 모델',
     icon: <IconChart size={30} />,
-    items: ['주차별 2·3·4차 Fine-tuning', '취약 클래스 데이터 보강', '증강·하이퍼파라미터 최적화'],
-    result: '최적 모델 선정',
+    items: ['취약·소수 클래스 데이터 보강', '클래스 균형 기반 증강 조건 조정', '동일 미디어 조건으로 4개 모델 재검증'],
+    result: '서비스용 대표 모델 고도화',
   },
   {
     phase: 'STEP 02',
-    period: '중기 · 운영 확장',
+    period: '중기 · 성능·운영 확장',
     title: '더 빠르고 안정적인 분석',
     icon: <IconBolt size={30} />,
-    items: ['GPU 추론 환경 전환', '외부 큐 기반 다중 워커', '격리된 모델 실행·자동 복구'],
-    result: '대용량 동시 처리',
+    items: ['모델별 FPS·메모리·추론 지연 측정', 'GPU 추론 환경과 다중 작업 처리', '분석 실패 감지·자동 복구 체계 구축'],
+    result: '안정적인 동시 분석 환경',
   },
   {
     phase: 'STEP 03',
     period: '장기 · 현장 연계',
-    title: '실시간 해양 관측',
+    title: '실시간 연안 관측',
     icon: <IconScan size={30} />,
-    items: ['드론·연안 CCTV 스트림 연계', '위치·시간대별 발생 패턴 분석', '관제 알림과 수거 경로 지원'],
-    result: '예측형 대응 체계',
+    items: ['연안 CCTV API·영상 스트림 연계', '위치·시간·클래스별 발생 패턴 분석', '위험 알림과 수거 의사결정 지원'],
+    result: '현장 대응형 관측 플랫폼',
   },
 ];
 
@@ -37,7 +37,7 @@ export default function Slide12() {
         <div className={styles.chapterBadge}>Future · 확장 로드맵</div>
         <h1 className={styles.slideTitle}>향후 확장 계획</h1>
         <p className={styles.slideSubtitle} style={{ marginBottom: 26, maxWidth: 1120, color: '#344e4c', fontSize: 20, fontWeight: 700 }}>
-          1차 학습과 MVP를 출발점으로, 정확도·처리 규모·현장 연결성을 단계적으로 확장합니다.
+          4개 모델 비교 분석과 실시간 탐지 초기 구현을 기반으로, 모델 정확도·운영 성능·현장 연계를 단계적으로 고도화합니다.
         </p>
 
         <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, width: '100%' }}>
@@ -62,10 +62,10 @@ export default function Slide12() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 17, width: '100%', marginTop: 22, padding: '17px 22px', boxSizing: 'border-box', borderRadius: 12, background: '#263f50', color: '#fff' }}>
           <span style={{ color: '#ed916f', fontSize: 13, fontWeight: 900, letterSpacing: 1.3 }}>VISION</span>
           <span style={{ width: 1, height: 23, background: 'rgba(255,255,255,0.25)' }} />
-          <strong style={{ fontSize: 20 }}>업로드 기반 분석 도구에서 실시간 해양 관측·대응 플랫폼으로</strong>
+          <strong style={{ fontSize: 20 }}>업로드 분석과 실시간 탐지를 연결한 지능형 해양 부유물 관측·대응 플랫폼</strong>
         </div>
       </div>
-      <div className={styles.pageNumber}>10</div>
+      <div className={styles.pageNumber}>13</div>
     </div>
   );
 }

@@ -8,8 +8,10 @@ import type { AdminUser, Analysis, AuditLog, ContentItem, Inquiry, User } from "
 import { DevelopmentInfoPage, ProjectOverviewPage } from "./public-home";
 import { AdminObservationMap, OBSERVATION_DUMMY_CLASS_SUMMARY } from "./admin-observation-map";
 import { analysisStatusLabel, effectiveAnalysisStatus } from "@/lib/analysis-status";
+import { AnalysisDetail } from "./analysis-detail";
+import { AdminRealtimeDemo } from "./admin-realtime-demo";
 
-export type WorkspaceView = "home" | "overview" | "development" | "analysis" | "realtime" | "records" | "compare" | "free" | "bug" | "inquiry" | "faq" | "notice" | "admin";
+export type WorkspaceView = "home" | "overview" | "development" | "analysis" | "realtime" | "records" | "free" | "bug" | "inquiry" | "faq" | "notice" | "admin";
 
 export const viewTitles: Record<WorkspaceView, { kicker: string; title: string }> = {
   home: { kicker: "MY FLOATWATCH", title: "홈" },
@@ -18,7 +20,6 @@ export const viewTitles: Record<WorkspaceView, { kicker: string; title: string }
   analysis: { kicker: "AI OBSERVATION", title: "부유물 탐색" },
   realtime: { kicker: "LIVE OBSERVATION", title: "실시간 탐색" },
   records: { kicker: "OBSERVATION LOG", title: "탐색 기록" },
-  compare: { kicker: "AI PERFORMANCE", title: "AI 성능 비교" },
   free: { kicker: "COMMUNITY", title: "자유게시판" },
   bug: { kicker: "BUG REPORT", title: "버그 제보" },
   inquiry: { kicker: "PRIVATE SUPPORT", title: "1:1 문의" },
@@ -27,7 +28,7 @@ export const viewTitles: Record<WorkspaceView, { kicker: string; title: string }
   admin: { kicker: "ADMINISTRATION", title: "관리자 페이지" },
 };
 
-export function WorkspaceSection({ view, user, onNavigate }: { view: Exclude<WorkspaceView, "home" | "analysis" | "realtime" | "records" | "compare">; user: User; onNavigate?: (view: WorkspaceView) => void }) {
+export function WorkspaceSection({ view, user, onNavigate }: { view: Exclude<WorkspaceView, "home" | "analysis" | "realtime" | "records">; user: User; onNavigate?: (view: WorkspaceView) => void }) {
   if (view === "overview") return <ProjectOverviewPage onStart={() => onNavigate?.("analysis")}/>;
   if (view === "development") return <DevelopmentInfoPage/>;
   if (view === "inquiry") return <InquirySection user={user}/>;
@@ -332,7 +333,7 @@ function AdminConsole({ onNavigate }: { onNavigate?: (view: WorkspaceView) => vo
   const [analysisCounts, setAnalysisCounts] = useState<Record<AdminAnalysisLogFilter, number>>({ all: 0, active: 0, completed: 0, failed: 0, cancelled: 0 });
   const [logView, setLogView] = useState<"audit" | "analysis">("audit");
   const [analysisLogFilter, setAnalysisLogFilter] = useState<"all" | "active" | "completed" | "failed" | "cancelled">("all");
-  const [expandedAnalysisId, setExpandedAnalysisId] = useState<number | null>(null);
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<number | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [logsPage, setLogsPage] = useState(1);
   const [inquiriesPage, setInquiriesPage] = useState(1);
@@ -426,7 +427,7 @@ function AdminConsole({ onNavigate }: { onNavigate?: (view: WorkspaceView) => vo
     setDeleteBusy(true); setDeleteError("");
     try {
       await api(`/admin/analyses/${deleteTarget.id}?reason=${encodeURIComponent(reason)}`, { method: "DELETE" });
-      setExpandedAnalysisId(null); setDeleteTarget(null); setDeleteReason("");
+      setSelectedAnalysisId(null); setDeleteTarget(null); setDeleteReason("");
       await load();
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "분석 기록을 삭제하지 못했습니다.");
@@ -447,7 +448,7 @@ function AdminConsole({ onNavigate }: { onNavigate?: (view: WorkspaceView) => vo
   function changeAnalysisLogFilter(value: AdminAnalysisLogFilter) {
     const scrollTop = window.scrollY;
     setAnalysisLogFilter(value);
-    setExpandedAnalysisId(null);
+    setSelectedAnalysisId(null);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.scrollTo({ top: scrollTop, left: 0, behavior: "auto" })));
   }
   function changeAdminArea(nextArea: "observation" | "service") {
@@ -463,7 +464,7 @@ function AdminConsole({ onNavigate }: { onNavigate?: (view: WorkspaceView) => vo
     {renderedArea === "observation" ? <OperationsBriefingV2 onNavigate={onNavigate}/> : <><div className="admin-tabs"><button className={tab === "users" ? "active" : ""} onClick={() => setTab("users")}><UserCog size={17}/><span><strong>회원 관리</strong><small>권한 및 이용 상태</small></span></button><button className={tab === "records" ? "active" : ""} onClick={() => setTab("records")}><Video size={17}/><span><strong>로그 관리</strong><small>전체 분석 이력</small></span></button><button className={tab === "inquiries" ? "active" : ""} onClick={() => setTab("inquiries")}><MessageSquareText size={17}/><span><strong>1:1 문의 관리</strong><small>문의 확인 및 답변</small></span></button></div>
     {adminListError && <div className="admin-list-error" role="alert"><TriangleAlert size={17}/><span><strong>목록을 불러오지 못했습니다.</strong><small>{adminListError}</small></span><button type="button" onClick={() => void load()}>다시 시도</button></div>}
     {tab === "users" && <><div className="admin-table admin-users-table"><div className="admin-row head"><span>회원</span><span>이메일</span><span>권한</span><span>이용 상태</span><span>가입일</span></div>{paginatedUsers.map((item) => { const busy = updatingUserId === item.id; const locked = updatingUserId !== null; return <div className={`admin-row ${busy ? "updating" : ""}`} key={item.id}><strong className="admin-member-name">{item.name}</strong><span className="admin-email">{item.email}</span><div className="admin-role-control" aria-label={`${item.name} 권한`}><button type="button" className={item.role === "user" ? "active" : ""} disabled={locked} onClick={() => item.role !== "user" && updateUser(item, { role: "user" })}>일반</button><button type="button" className={item.role === "admin" ? "active" : ""} disabled={locked} onClick={() => item.role !== "admin" && updateUser(item, { role: "admin" })}>관리자</button></div><button type="button" className={`admin-state-switch ${item.active ? "on" : ""}`} disabled={locked} aria-pressed={item.active} onClick={() => updateUser(item, { active: !item.active })}><i><span/></i><b>{item.active ? "활성" : "이용 정지"}</b></button><time>{formatDate(item.created_at)}</time></div>})}{!users.length && <div className="admin-empty">등록된 회원이 없습니다.</div>}{usersTotal > 10 && <AdminPagination page={usersPage} total={usersTotal} onChange={setUsersPage}/>}</div>{userFeedback && <p className="admin-feedback" role="status">{userFeedback}</p>}</>}
-    {tab === "records" && <div className="admin-log-view"><nav className="admin-log-switch" aria-label="로그 종류"><button type="button" className={logView === "audit" ? "active" : ""} onClick={() => setLogView("audit")}><strong>감사 로그</strong><small>관리자 운영 작업</small></button><button type="button" className={logView === "analysis" ? "active" : ""} onClick={() => setLogView("analysis")}><strong>분석 기록</strong><small>전체 사용자 분석 이력</small></button></nav>{logView === "audit" ? <section className="admin-log-panel"><header><strong>관리자 감사 로그</strong><span>권한 변경, 계정 정지, 삭제 및 답변 이력</span></header><div className="admin-table"><div className="admin-row audit head"><span>수행 관리자</span><span>작업</span><span>대상</span><span>사유</span><span>수행 시간</span></div>{paginatedAuditLogs.map((item) => <div className="admin-row audit" key={item.id}><strong>{item.actor.name}</strong><span>{auditActionLabel(item.action)}</span><span>{item.target_label ?? `${item.target_type} #${item.target_id ?? "-"}`}</span><span>{item.reason}</span><time>{formatDateTime(item.created_at)}</time></div>)}{!auditLogs.length && <div className="admin-empty">기록된 관리자 작업이 없습니다.</div>}{auditLogsTotal > 10 && <AdminPagination page={logsPage} total={auditLogsTotal} onChange={setLogsPage}/>}</div></section> : <AdminAnalysisLog records={records} total={recordsTotal} counts={analysisCounts} filter={analysisLogFilter} expandedId={expandedAnalysisId} page={logsPage} onPageChange={setLogsPage} onFilterChange={changeAnalysisLogFilter} onToggle={(id) => setExpandedAnalysisId((current) => current === id ? null : id)} onDelete={deleteRecord}/>}</div>}
+    {tab === "records" && <div className="admin-log-view">{selectedAnalysisId ? <main className="records-detail-page"><header className="records-detail-nav"><button type="button" onClick={() => setSelectedAnalysisId(null)}><ArrowLeft size={17}/>분석 기록 목록</button><span>ADMIN ANALYSIS REPORT · #{selectedAnalysisId}</span></header><div className="records-detail-content"><AnalysisDetail adminMode id={selectedAnalysisId} relatedAnalyses={records.filter((analysis) => { const target = records.find((candidate) => candidate.id === selectedAnalysisId); return target?.batch_id ? analysis.batch_id === target.batch_id : analysis.id === selectedAnalysisId; })} onUpdated={() => void load()}/></div></main> : <><nav className="admin-log-switch" aria-label="로그 종류"><button type="button" className={logView === "audit" ? "active" : ""} onClick={() => setLogView("audit")}><strong>감사 로그</strong><small>관리자 운영 작업</small></button><button type="button" className={logView === "analysis" ? "active" : ""} onClick={() => setLogView("analysis")}><strong>분석 기록</strong><small>전체 사용자 분석 이력</small></button></nav>{logView === "audit" ? <section className="admin-log-panel"><header><strong>관리자 감사 로그</strong><span>권한 변경, 계정 정지, 삭제 및 답변 이력</span></header><div className="admin-table"><div className="admin-row audit head"><span>수행 관리자</span><span>작업</span><span>대상</span><span>사유</span><span>수행 시간</span></div>{paginatedAuditLogs.map((item) => <div className="admin-row audit" key={item.id}><strong>{item.actor.name}</strong><span>{auditActionLabel(item.action)}</span><span>{item.target_label ?? `${item.target_type} #${item.target_id ?? "-"}`}</span><span>{item.reason}</span><time>{formatDateTime(item.created_at)}</time></div>)}{!auditLogs.length && <div className="admin-empty">기록된 관리자 작업이 없습니다.</div>}{auditLogsTotal > 10 && <AdminPagination page={logsPage} total={auditLogsTotal} onChange={setLogsPage}/>}</div></section> : <AdminAnalysisLog records={records} total={recordsTotal} counts={analysisCounts} filter={analysisLogFilter} page={logsPage} onPageChange={setLogsPage} onFilterChange={changeAnalysisLogFilter} onOpen={setSelectedAnalysisId} onDelete={deleteRecord}/>}</>}</div>}
     {tab === "inquiries" && <section className="admin-inquiry-list"><header><div><strong>접수된 문의</strong><span>문의 내용을 확인하고 같은 화면에서 답변합니다.</span></div><b>{pendingInquiries}건 대기</b></header>{paginatedInquiries.map((item) => { const expanded = selectedInquiry?.id === item.id; return <article className={expanded ? "open" : ""} key={item.id}><button type="button" onClick={() => { setInquiryFeedback(""); setSelectedInquiry(expanded ? null : item); }}><span className={`status ${item.status === "answered" ? "completed" : "processing"}`}>{item.status === "answered" ? "답변 완료" : "접수"}</span><strong>{item.title}</strong><small>{item.user.name} · {item.user.email}</small><time>{formatDate(item.created_at)}</time><ChevronDown size={17}/></button>{expanded && <div className="admin-inquiry-detail"><div className="admin-inquiry-question"><small>문의 내용</small><p>{item.content}</p>{item.attachments?.length > 0 && <InquiryAttachments files={item.attachments}/>}</div><form onSubmit={answerInquiry}><label><span>관리자 답변</span><textarea name="answer" rows={6} required defaultValue={item.answer ?? ""} placeholder="회원에게 전달할 답변을 작성하세요."/></label>{inquiryFeedback && <p className="inquiry-feedback" role="status">{inquiryFeedback}</p>}<button className="primary-button" disabled={inquiryBusy}><Send size={15}/>{inquiryBusy ? "저장 중..." : item.answer ? "답변 수정" : "답변 등록"}</button></form></div>}</article> })}{!inquiries.length && <div className="admin-empty">접수된 문의가 없습니다.</div>}{inquiriesTotal > 10 && <AdminPagination page={inquiriesPage} total={inquiriesTotal} onChange={(page) => { setInquiriesPage(page); setSelectedInquiry(null); }}/>}</section>}</>}
   </div></div>;
 }
@@ -493,18 +494,20 @@ const analysisFailureMeta: Partial<Record<NonNullable<Analysis["error_code"]>, {
   INFERENCE_FAILED: { label: "추론 오류", message: "AI 추론 과정에서 문제가 발생했습니다." },
 };
 
-function AdminAnalysisLog({ records, total, counts, filter, expandedId, page, onPageChange, onFilterChange, onToggle, onDelete }: {
+function AdminAnalysisLog({ records, total, counts, filter, page, onPageChange, onFilterChange, onOpen, onDelete }: {
   records: (Analysis & { owner: { id: number; name: string } })[];
   total: number;
   counts: Record<AdminAnalysisLogFilter, number>;
   filter: AdminAnalysisLogFilter;
-  expandedId: number | null;
   page: number;
   onPageChange: (page: number) => void;
   onFilterChange: (value: AdminAnalysisLogFilter) => void;
-  onToggle: (id: number) => void;
+  onOpen: (id: number) => void;
   onDelete: (id: number) => Promise<void>;
 }) {
+  const [recordType, setRecordType] = useState<"upload" | "realtime">("upload");
+  const expandedId: number | null = null;
+  const onToggle = onOpen;
   const filtered = records;
   const pageCount = Math.max(1, Math.ceil(total / 10));
   const safePage = Math.min(page, pageCount);
@@ -513,7 +516,7 @@ function AdminAnalysisLog({ records, total, counts, filter, expandedId, page, on
     { value: "all", label: "전체" }, { value: "active", label: "진행 중" }, { value: "completed", label: "완료" },
     { value: "failed", label: "시스템 실패" }, { value: "cancelled", label: "사용자 중단" },
   ];
-  return <section className="admin-log-panel admin-analysis-log">
+  return <><nav className="admin-record-type-tabs" aria-label="분석 기록 유형"><button type="button" className={recordType === "upload" ? "active" : ""} onClick={() => setRecordType("upload")}><strong>업로드 분석</strong><small>파일 기반 분석 결과</small></button><button type="button" className={recordType === "realtime" ? "active" : ""} onClick={() => setRecordType("realtime")}><strong>실시간 탐지</strong><small>시작부터 종료까지 세션 기록</small></button></nav>{recordType === "realtime" ? <AdminRealtimeDemo/> : <section className="admin-log-panel admin-analysis-log">
     <header><div><strong>분석 기록</strong><span>오류 원인별로 전체 사용자의 분석 이력을 확인합니다.</span></div><p>실패 통계 <b>{counts.failed}건</b><small>사용자 중단 제외</small></p></header>
     <nav className="admin-analysis-filters" aria-label="분석 상태 필터"><span className="admin-analysis-filter-label">처리 상태</span><div>{filters.map((item) => <button key={item.value} type="button" className={filter === item.value ? "active" : ""} onClick={() => onFilterChange(item.value)}><span>{item.label}</span><b>{counts[item.value]}</b></button>)}</div></nav>
     <div className="admin-table admin-analysis-table"><div className="admin-row record head"><span>사용자</span><span>분석 미디어</span><span>적용 모델</span><span>상태·원인</span><span>관리</span></div>{paginated.map((item) => {
@@ -527,7 +530,7 @@ function AdminAnalysisLog({ records, total, counts, filter, expandedId, page, on
       const resultMessage = failure?.message ?? (item.status === "completed" ? "분석이 정상적으로 완료되었습니다." : item.status === "processing" ? "현재 AI 추론을 진행하고 있습니다." : "분석 시작을 기다리고 있습니다.");
       return <article className={`admin-analysis-entry ${expanded ? "open" : ""}`} key={item.id}><div className="admin-row record"><button type="button" className="admin-analysis-row-main" aria-expanded={expanded} onClick={() => onToggle(item.id)}><strong>{item.owner.name}</strong><span>{item.video.name}</span><span>{item.model.name}</span><span className={`status admin-analysis-status ${effectiveStatus}`}>{statusLabel}</span><ChevronDown size={15}/></button><button className="table-icon" aria-label="분석 로그 삭제" title="분석 로그 삭제" onClick={() => void onDelete(item.id)}><Trash2 size={15}/></button></div>{expanded && <div className="admin-analysis-detail"><div><small>처리 결과 안내</small><strong>{resultMessage}</strong></div><div><small>운영 분류</small><code>{failureCode ?? (effectiveStatus === "completed" ? "NORMAL_COMPLETION" : "IN_PROGRESS")}</code></div><div><small>기록 번호·생성 시각</small><strong>#{item.id} · {formatDateTime(item.created_at)}</strong></div>{systemFailed && <p><TriangleAlert size={14}/>상세 예외 정보는 사용자 화면에 노출하지 않고 서버 로그에서 확인합니다.</p>}</div>}</article>;
     })}{!filtered.length && <div className="admin-empty">선택한 조건에 해당하는 분석 기록이 없습니다.</div>}{total > 10 && <AdminPagination page={safePage} total={total} onChange={onPageChange}/>}</div>
-  </section>;
+  </section>}</>;
 }
 
 function AdminPagination({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {

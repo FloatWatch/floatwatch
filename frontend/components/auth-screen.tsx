@@ -48,7 +48,7 @@ type AuthProps = {
   isPanelOpen?: boolean;
   externalError?: string;
   authenticatedUser?: UserType;
-  onWorkspaceNavigate?: (view: "analysis" | "realtime" | "records" | "compare" | "inquiry" | "admin") => void;
+  onWorkspaceNavigate?: (view: "analysis" | "realtime" | "records" | "free" | "inquiry" | "admin") => void;
   onAuthenticatedLogout?: () => void;
   onUserUpdated?: (user: UserType) => void;
   profileStats?: { analyses: number; inquiries: number };
@@ -91,6 +91,7 @@ export function AuthScreen({
   const [profilePassword, setProfilePassword] = useState("");
   const [profileDeleteConfirmation, setProfileDeleteConfirmation] = useState("");
   const [profileMessage, setProfileMessage] = useState("");
+  const [boardRevision, setBoardRevision] = useState(0);
   const [panelCollapsed, setPanelCollapsed] = useState(
     isPanelOpen === undefined ? initialPanelCollapsed : true,
   );
@@ -137,6 +138,11 @@ export function AuthScreen({
       setProfileOpen(false);
       setPanelCollapsed(true);
       setProfileClosing(false);
+      setProfileEditing(false);
+      setProfileCurrentPassword("");
+      setProfilePassword("");
+      setProfileDeleteConfirmation("");
+      setProfileMessage("");
     }, 360);
   }
 
@@ -167,6 +173,18 @@ export function AuthScreen({
     else handleHeaderLogin();
   }
 
+  function handleWorkspaceShortcut(view: "realtime" | "analysis" | "free") {
+    if (onWorkspaceNavigate) {
+      onWorkspaceNavigate(view);
+      return;
+    }
+    if (view === "analysis") {
+      handleStartAnalysis();
+      return;
+    }
+    handleHeaderLogin();
+  }
+
   function handleProjectOverview() {
     if (onHeaderNavigate) onHeaderNavigate("overview");
     else window.location.href = "/#overview";
@@ -174,6 +192,9 @@ export function AuthScreen({
 
   function navigateFromMenu(view: PublicView) {
     setOpenMenu(null);
+    if (view === "notice" || view === "community" || view === "bug" || view === "faq") {
+      setBoardRevision((revision) => revision + 1);
+    }
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     if (onHeaderNavigate) onHeaderNavigate(view);
   }
@@ -310,9 +331,6 @@ export function AuthScreen({
                     <button type="button" onClick={() => { setOpenMenu(null); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); authenticatedUser && onWorkspaceNavigate ? onWorkspaceNavigate("records") : handleHeaderLogin(); }}>
                       탐색 기록
                     </button>
-                    <button type="button" onClick={() => { setOpenMenu(null); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); authenticatedUser && onWorkspaceNavigate ? onWorkspaceNavigate("compare") : handleHeaderLogin(); }}>
-                      AI 성능 비교
-                    </button>
                   </div>
                 </div>
                 <div className={`auth-menu-group ${openMenu === "board" ? "menu-open" : ""}`} onMouseEnter={() => setOpenMenu("board")}>
@@ -329,6 +347,9 @@ export function AuthScreen({
                     </button>
                     <button type="button" onClick={() => navigateFromMenu("faq")}>
                       자주 묻는 질문
+                    </button>
+                    <button type="button" onClick={() => { setOpenMenu(null); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); authenticatedUser && onWorkspaceNavigate ? onWorkspaceNavigate("inquiry") : handleHeaderLogin(); }}>
+                      1:1 문의
                     </button>
                   </div>
                 </div>
@@ -348,7 +369,7 @@ export function AuthScreen({
                     });
                   }}>
                     <User size={15} />
-                    마이페이지
+                    {authenticatedUser.name}님
                   </button>
                 </div>
               ) : (
@@ -414,7 +435,7 @@ export function AuthScreen({
               </section>
             ) : contentView === "notice" || contentView === "community" || contentView === "bug" || contentView === "faq" ? (
               <OceanBoardPage
-                key={contentView}
+                key={`${contentView}-${boardRevision}`}
                 category={contentView === "community" ? "free" : contentView}
                 user={authenticatedUser}
                 onLogin={handleHeaderLogin}
@@ -445,10 +466,16 @@ export function AuthScreen({
             </div>
             )}
 
-            {contentView === "home" && <div className="auth-capabilities" aria-label="서비스 주요 정보">
-              <div><small>VIDEO INPUT</small><strong>보유 영상 업로드</strong></div>
-              <div><small>AI MODEL</small><strong>YOLO PT 모델 적용</strong></div>
-              <div><small>ANALYSIS OUTPUT</small><strong>탐지 영상 및 성능 지표</strong></div>
+            {contentView === "home" && <div className="auth-capabilities" aria-label="주요 탐색 기능 바로가기">
+              <button type="button" onClick={() => handleWorkspaceShortcut("realtime")}>
+                <span><small>LIVE MONITORING</small><strong>실시간 해양 현장을 관측하세요</strong></span><ArrowRight aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => handleWorkspaceShortcut("analysis")}>
+                <span><small>OBJECT DETECTION</small><strong>영상 속 부유물을 탐지하세요</strong></span><ArrowRight aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => { window.location.href = "/presentation"; }}>
+                <span><small>PROJECT PRESENTATION</small><strong>FloatWatch 프로젝트 PPT 보기</strong></span><Presentation aria-hidden="true" />
+              </button>
             </div>}
           </section>
         )}
@@ -496,7 +523,7 @@ export function AuthScreen({
                     <strong>{authenticatedUser.name}님</strong>
                     <p>{authenticatedUser.email}</p>
                   </div>
-                  {authenticatedUser.role === "admin" ? <div className="profile-admin-actions"><button className="profile-admin-badge" type="button" onClick={() => onWorkspaceNavigate?.("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11} />관리자</button><button className="profile-admin-badge" type="button" onClick={() => { window.location.href = "/presentation"; }} title="PPT 페이지로 이동"><Presentation size={11} />PPT</button></div> : <em><ShieldCheck size={11} />일반 회원</em>}
+                  {authenticatedUser.role === "admin" ? <div className="profile-admin-actions"><button className="profile-admin-badge" type="button" onClick={() => onWorkspaceNavigate?.("admin")} title="관리자 페이지로 이동"><ShieldCheck size={11} />관리자</button></div> : <em><ShieldCheck size={11} />일반 회원</em>}
                 </div>
                 <div className="profile-activity" aria-label="나의 이용 현황">
                   <div><small>분석 기록</small><strong>{profileStats.analyses}<em>건</em></strong></div>

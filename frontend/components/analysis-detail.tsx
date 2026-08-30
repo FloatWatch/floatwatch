@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Ban, CalendarDays, ChevronDown, Cpu, Download, FileText, FileVideo, Gauge, LoaderCircle, MapPinned, Plus, RefreshCw, RotateCcw, Search, ScanLine, ScanSearch, WifiOff, X } from "lucide-react";
+import { AlertCircle, Ban, BarChart3, CalendarDays, ChevronDown, Cpu, Download, FileText, FileVideo, Gauge, LoaderCircle, MapPinned, Plus, RefreshCw, RotateCcw, Search, ScanLine, ScanSearch, WifiOff, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { API_URL, api } from "@/lib/api";
 import type { Analysis } from "@/lib/types";
@@ -10,7 +10,7 @@ import { ZoomableImage } from "./zoomable-image";
 import { LocationMap } from "./location-map";
 import { effectiveAnalysisStatus } from "@/lib/analysis-status";
 
-export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated, onPrepareNew, showReportSummary = true }: { id: number; onUpdated: () => void; onOpenDetails?: (id: number) => void; onAnalysisCreated?: (id: number) => void; onPrepareNew?: () => void; showReportSummary?: boolean }) {
+export function AnalysisDetail({ id, relatedAnalyses = [], onUpdated, onOpenDetails, onAnalysisCreated, onPrepareNew, showReportSummary = true, adminMode = false }: { id: number; relatedAnalyses?: Analysis[]; onUpdated: () => void; onOpenDetails?: (id: number) => void; onAnalysisCreated?: (id: number) => void; onPrepareNew?: () => void; showReportSummary?: boolean; adminMode?: boolean }) {
   const [item, setItem] = useState<Analysis | null>(null);
   const [loadError, setLoadError] = useState("");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -21,8 +21,24 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
   const [actionError, setActionError] = useState("");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [locationMapOpen, setLocationMapOpen] = useState(false);
+  const [resultModelKey, setResultModelKey] = useState("yolov8s");
+  const [batchDetails, setBatchDetails] = useState<Analysis[]>([]);
   const resultVideoRef = useRef<HTMLVideoElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
+  const relatedAnalysisIds = relatedAnalyses.map((analysis) => analysis.id).sort((a, b) => a - b).join(",");
+  useEffect(() => {
+    const preferred = relatedAnalyses.find((analysis) => analysis.model.model_key === "yolov8s") ?? relatedAnalyses[0];
+    setResultModelKey(preferred?.model.model_key ?? "yolov8s");
+  }, [id, relatedAnalysisIds]);
+  useEffect(() => {
+    let active = true;
+    setBatchDetails([]);
+    if (!relatedAnalyses.length) return () => { active = false; };
+    void Promise.all(relatedAnalyses.map((analysis) => api<Analysis>(`/${adminMode ? "admin/" : ""}analyses/${analysis.id}`)))
+      .then((details) => { if (active) setBatchDetails(details); })
+      .catch(() => { if (active) setBatchDetails([]); });
+    return () => { active = false; };
+  }, [id, relatedAnalysisIds, adminMode]);
   useEffect(() => {
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -35,7 +51,7 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
     async function load() {
       controller = new AbortController();
       try {
-        const value = await api<Analysis>(`/analyses/${id}`, { signal: controller.signal });
+        const value = await api<Analysis>(`/${adminMode ? "admin/" : ""}analyses/${id}`, { signal: controller.signal });
         if (!live) return;
         consecutiveFailures = 0;
         setReconnectAttempt(0);
@@ -63,7 +79,7 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
       controller?.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [id, reconnectNonce]);
+  }, [id, reconnectNonce, adminMode]);
 
   async function retryAnalysis() {
     setActionBusy("retry"); setActionError("");
@@ -100,7 +116,7 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
       <div className="analysis-failure-context"><span><small>적용 모델</small><strong>{item.model.name}</strong></span><i/><span><small>분석 미디어</small><strong>{item.video.name}</strong></span><i/><span><small>분석 설정</small><strong>신뢰도 {Math.round(item.confidence * 100)}% · {item.frame_stride} frame</strong></span></div>
       <div className="analysis-failure-guide"><strong>{cancelled ? "동일한 조건으로 다시 시작할 수 있습니다." : "해결 방법"}</strong><p>{cancelled ? "기존 기록은 남겨두고 새로운 분석 작업으로 안전하게 다시 시작합니다." : presentation.guide}</p></div>
       {actionError && <p className="analysis-action-error"><AlertCircle size={14}/>{actionError}</p>}
-      <div className="analysis-failure-actions"><button className="analysis-retry-button" type="button" disabled={actionBusy !== null} onClick={() => void retryAnalysis()}>{actionBusy === "retry" ? <LoaderCircle className="spin" size={17}/> : <RotateCcw size={17}/>}동일 조건으로 다시 분석</button>{onPrepareNew && <button className="analysis-new-button" type="button" disabled={actionBusy !== null} onClick={onPrepareNew}><Plus size={17}/>새 탐색 준비</button>}</div>
+      {!adminMode && <div className="analysis-failure-actions"><button className="analysis-retry-button" type="button" disabled={actionBusy !== null} onClick={() => void retryAnalysis()}>{actionBusy === "retry" ? <LoaderCircle className="spin" size={17}/> : <RotateCcw size={17}/>}동일 조건으로 다시 분석</button>{onPrepareNew && <button className="analysis-new-button" type="button" disabled={actionBusy !== null} onClick={onPrepareNew}><Plus size={17}/>새 탐색 준비</button>}</div>}
     </section>;
   }
   if (effectiveStatus !== "completed") {
@@ -109,14 +125,17 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
     const inputConfirmed = visibleProgress >= 20;
     const resultStage = visibleProgress >= 90;
     const unknownFrameCount = item.video.media_type === "video" && !item.video.frame_count;
-    return <><section className="processing-state"><div className="processing-content"><div className="processing-icon"><ScanSearch size={30} /></div><p className="section-kicker">{queued ? "ANALYSIS QUEUE" : resultStage ? "RESULT RENDERING" : visibleProgress < 20 ? "ANALYSIS SETUP" : "CPU INFERENCE"}</p><h2>{queued ? "앞선 분석이 끝나기를 기다리고 있습니다" : resultStage ? "분석 결과를 생성하고 있습니다" : visibleProgress < 20 ? "AI 모델과 미디어를 준비하고 있습니다" : `${item.video.media_type === "image" ? "이미지를" : "동영상을"} 분석하고 있습니다`}</h2><p className="processing-source"><span>{item.model.name}</span><i /> <span>{item.video.name}</span></p><div className="processing-steps" aria-label="분석 진행 단계"><span className={queued || !inputConfirmed ? "active" : "complete"}><b>1</b>{queued ? "분석 대기" : "작업 준비"}</span><span className={queued || !inputConfirmed ? "" : resultStage ? "complete" : "active"}><b>2</b>모델 추론</span><span className={!queued && resultStage ? "complete active" : ""}><b>3</b>결과 생성</span></div><div className={`processing-progress ${unknownFrameCount ? "is-frame-count" : ""}`}><div className="progress-track"><span style={{ width: unknownFrameCount ? "100%" : `${visibleProgress}%` }} /></div><strong>{unknownFrameCount ? <>{item.processed_frames.toLocaleString()}<em>frame</em></> : <>{visibleProgress.toFixed(0)}<em>%</em></>}</strong></div><small>{queued ? "현재 실행 중인 분석이 완료되면 자동으로 시작됩니다." : unknownFrameCount ? "전체 길이를 확인할 수 없어 처리한 프레임 수를 표시합니다." : "분석은 백그라운드에서 계속됩니다. 창을 닫아도 기록에서 결과를 확인할 수 있습니다."}</small>{reconnectAttempt > 0 && <div className="analysis-reconnect-notice" role="status"><LoaderCircle className="spin" size={14}/><span><strong>서버 연결을 다시 확인하고 있습니다</strong><small>분석은 백그라운드에서 계속될 수 있습니다.</small></span></div>}<button className="analysis-cancel-button" type="button" disabled={actionBusy !== null} onClick={() => setCancelConfirmOpen(true)}><Ban size={14}/>분석 중단</button>{actionError && <p className="analysis-action-error"><AlertCircle size={14}/>{actionError}</p>}</div></section>{cancelConfirmOpen && <CancelAnalysisDialog item={item} busy={actionBusy === "cancel"} error={actionError} onClose={() => { if (!actionBusy) { setCancelConfirmOpen(false); setActionError(""); } }} onConfirm={() => void cancelAnalysis()}/>}</>;
+    return <><section className="processing-state"><div className="processing-content"><div className="processing-icon"><ScanSearch size={30} /></div><p className="section-kicker">{queued ? "ANALYSIS QUEUE" : resultStage ? "RESULT RENDERING" : visibleProgress < 20 ? "ANALYSIS SETUP" : "CPU INFERENCE"}</p><h2>{queued ? "앞선 분석이 끝나기를 기다리고 있습니다" : resultStage ? "분석 결과를 생성하고 있습니다" : visibleProgress < 20 ? "AI 모델과 미디어를 준비하고 있습니다" : `${item.video.media_type === "image" ? "이미지를" : "동영상을"} 분석하고 있습니다`}</h2><p className="processing-source"><span>{item.model.name}</span><i /> <span>{item.video.name}</span></p><div className="processing-steps" aria-label="분석 진행 단계"><span className={queued || !inputConfirmed ? "active" : "complete"}><b>1</b>{queued ? "분석 대기" : "작업 준비"}</span><span className={queued || !inputConfirmed ? "" : resultStage ? "complete" : "active"}><b>2</b>모델 추론</span><span className={!queued && resultStage ? "complete active" : ""}><b>3</b>결과 생성</span></div><div className={`processing-progress ${unknownFrameCount ? "is-frame-count" : ""}`}><div className="progress-track"><span style={{ width: unknownFrameCount ? "100%" : `${visibleProgress}%` }} /></div><strong>{unknownFrameCount ? <>{item.processed_frames.toLocaleString()}<em>frame</em></> : <>{visibleProgress.toFixed(0)}<em>%</em></>}</strong></div><small>{queued ? "현재 실행 중인 분석이 완료되면 자동으로 시작됩니다." : unknownFrameCount ? "전체 길이를 확인할 수 없어 처리한 프레임 수를 표시합니다." : "분석은 백그라운드에서 계속됩니다. 창을 닫아도 기록에서 결과를 확인할 수 있습니다."}</small>{reconnectAttempt > 0 && <div className="analysis-reconnect-notice" role="status"><LoaderCircle className="spin" size={14}/><span><strong>서버 연결을 다시 확인하고 있습니다</strong><small>분석은 백그라운드에서 계속될 수 있습니다.</small></span></div>}{!adminMode && <button className="analysis-cancel-button" type="button" disabled={actionBusy !== null} onClick={() => setCancelConfirmOpen(true)}><Ban size={14}/>분석 중단</button>}{actionError && <p className="analysis-action-error"><AlertCircle size={14}/>{actionError}</p>}</div></section>{!adminMode && cancelConfirmOpen && <CancelAnalysisDialog item={item} busy={actionBusy === "cancel"} error={actionError} onClose={() => { if (!actionBusy) { setCancelConfirmOpen(false); setActionError(""); } }} onConfirm={() => void cancelAnalysis()}/>}</>;
   }
 
-  const timeline = (item.frame_metrics ?? []).map((metric) => ({ ...metric, time: formatTime(metric.timestamp_seconds), confidence: Math.round(metric.avg_confidence * 100) }));
-  const classStats = item.class_stats ?? [];
-  const classResultGraph = [...classStats].sort((a, b) => b.count - a.count);
-  const maxClassDetections = Math.max(...classResultGraph.map((stat) => stat.count), 1);
+  const batchSource = batchDetails.length ? batchDetails : relatedAnalyses.length ? relatedAnalyses : [item];
+  const batchResults = batchSource.map((analysis) => analysis.id === item.id ? item : analysis);
+  const selectedBatchResult = batchResults.find((analysis) => analysis.model.model_key === resultModelKey) ?? null;
+  const visibleResult = selectedBatchResult ?? item;
+  const timeline = (visibleResult.frame_metrics ?? []).map((metric) => ({ ...metric, time: formatTime(metric.timestamp_seconds), confidence: Math.round(metric.avg_confidence * 100) }));
+  const classStats = visibleResult.class_stats ?? [];
   const elapsedSeconds = item.completed_at ? Math.max(0, (new Date(item.completed_at).getTime() - new Date(item.created_at).getTime()) / 1000) : null;
+  const modelResultTabs = <section className="records-model-result-tabs" aria-label="모델별 바운드 박스 결과"><header><div><p className="section-kicker">MODEL RESULTS</p><h3>모델별 바운드 박스 결과</h3></div><span className={`status ${selectedBatchResult?.status === "completed" ? "success" : ""}`}>{selectedBatchResult ? selectedBatchResult.status === "completed" ? "분석 완료" : "결과 준비 중" : "미등록"}</span></header><div>{(["yolov8s", "yolov11s", "yolov26s", "rt-detr"] as const).map((key) => { const result = batchResults.find((analysis) => analysis.model.model_key === key); const name = { yolov8s: "YOLOv8s", yolov11s: "YOLO11s", yolov26s: "YOLO26s", "rt-detr": "RT-DETR" }[key]; return <button type="button" key={key} className={`${resultModelKey === key ? "active" : ""} ${result ? "registered" : "unregistered"}`} onClick={() => setResultModelKey(key)}><Cpu size={16}/><span><strong>{name}</strong><small>{result ? result.status === "completed" ? "분석 완료" : result.status === "failed" ? "분석 실패" : `분석 ${Math.round(result.progress)}%` : "대표 PT 미등록"}</small></span></button>; })}</div></section>;
   const seekToTimelineMoment = (timestampSeconds: number) => {
     const video = resultVideoRef.current;
     if (!video) return;
@@ -168,12 +187,32 @@ export function AnalysisDetail({ id, onUpdated, onOpenDetails, onAnalysisCreated
       <div><span><Gauge size={16}/></span><small>분석 설정</small><strong>최소 신뢰도 {Math.round(item.confidence * 100)}% · {item.frame_stride} frame 간격</strong><em>{item.processing_fps?.toFixed(1) ?? "—"} FPS · 총 소요 {elapsedSeconds == null ? "—" : formatDuration(elapsedSeconds)}</em></div>
     </section>{item.video.location_confirmed && item.video.latitude != null && item.video.longitude != null && <section className="report-location"><MapPinned size={18}/><div><small>촬영 위치</small><strong>{item.video.location_name || "사용자가 확인한 관측 위치"}</strong>{item.video.location_description && <p>{item.video.location_description}</p>}<span>{item.video.latitude.toFixed(6)}, {item.video.longitude.toFixed(6)} · {item.video.location_source === "metadata" ? "메타데이터 자동 추출" : "지도에서 직접 선택"}</span></div><button type="button" onClick={() => setLocationMapOpen(true)}>지도에서 보기</button></section>}{locationMapOpen && item.video.latitude != null && item.video.longitude != null && <LocationPreviewDialog latitude={item.video.latitude} longitude={item.video.longitude} address={item.video.location_name} description={item.video.location_description} onClose={() => setLocationMapOpen(false)}/>}</>}
     <div className={`result-layout ${showReportSummary ? "report-result-layout" : ""}`}>
-      <section className="panel video-panel"><div className="panel-heading"><div><p className="section-kicker">ANNOTATED RESULT</p><h3>탐지 결과 {item.video.media_type === "image" ? "이미지" : "동영상"}</h3></div><span className="status success">분석 완료</span></div><div className="analysis-result-media-frame">{item.video.media_type === "image" ? <ZoomableImage className="analysis-result-zoom" src={`${API_URL}${item.output_url}`} alt="부유물 탐지 결과" imageStyle={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", objectPosition: "center", display: "block" }} /> : <video ref={resultVideoRef} controls preload="metadata" src={`${API_URL}${item.output_url}`} />}</div></section>
+      <div className="records-result-left records-result-stack"><section className="panel video-panel records-model-result-panel">{modelResultTabs}<div className="analysis-result-media-frame">{selectedBatchResult?.output_url ? selectedBatchResult.video.media_type === "image" ? <ZoomableImage className="analysis-result-zoom" src={`${API_URL}${selectedBatchResult.output_url}`} alt={`${selectedBatchResult.model.name} 부유물 탐지 결과`} imageStyle={{ width: "auto", height: "auto", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", objectPosition: "center", display: "block" }} /> : <video ref={resultVideoRef} controls preload="metadata" src={`${API_URL}${selectedBatchResult.output_url}`} /> : <div className="records-model-result-empty"><ScanLine size={28}/><strong>{selectedBatchResult ? "결과를 준비하고 있습니다" : "대표 PT 미등록"}</strong><span>{selectedBatchResult ? `현재 진행률 ${Math.round(selectedBatchResult.progress)}%` : "이번 비교 분석에서 실행되지 않은 모델입니다."}</span></div>}</div></section><ModelClassComparison items={batchResults}/><ModelBatchComparison items={batchResults}/></div>
       {!showReportSummary && <section className="panel class-panel"><div className="panel-heading"><div><p className="section-kicker">CONFIDENCE BY CLASS</p><h3>클래스별 신뢰도</h3><small>모델이 각 탐지 결과를 얼마나 확신했는지 보여줍니다.</small></div><strong>{classStats.length}<em>종</em></strong></div><div className="class-list">{classStats.length ? classStats.map((stat, index) => { const confidence = Math.round(stat.avg_confidence * 100); return <div className="class-row" key={stat.class_id}><span className="class-rank">{String(index + 1).padStart(2, "0")}</span><div className="class-row-main"><div><strong>{stat.class_name}</strong><small>탐지 {stat.count.toLocaleString()}건</small></div><div className="class-row-values"><b>{confidence}</b><span>%</span></div><div className="class-share-track" aria-label={`평균 신뢰도 ${confidence}%`}><i style={{ width: `${confidence}%` }} /></div></div></div>; }) : <div className="class-empty">탐지된 클래스가 없습니다.</div>}</div></section>}
     </div>
     {item.video.media_type === "video" && timeline.length > 1 && <section className="panel chart-panel timeline-panel"><div className="panel-heading"><div><p className="section-kicker">TIMELINE</p><h3>영상 내 탐지 집중 구간</h3><small>그래프의 구간을 클릭하면 해당 시점으로 이동해 영상을 바로 재생합니다.</small></div></div><ResponsiveContainer width="100%" height={140}><AreaChart data={timeline} onClick={(chartState) => { const point = chartState?.activePayload?.[0]?.payload as (typeof timeline)[number] | undefined; if (point) seekToTimelineMoment(point.timestamp_seconds); }} style={{ cursor: "pointer" }}><defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#69d0c6" stopOpacity={0.38}/><stop offset="1" stopColor="#69d0c6" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dce4e4"/><XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={35}/><YAxis allowDecimals={false} tick={{ fontSize: 11 }}/><Tooltip cursor={{ stroke: "rgba(105, 208, 198, .42)", strokeWidth: 1 }} content={<TimelineTooltip/>}/><Area type="monotone" dataKey="detection_count" name="탐지 건수" stroke="#69d0c6" fill="url(#areaFill)" strokeWidth={2} activeDot={{ r: 6, fill: "#e56b3f", stroke: "#fff", strokeWidth: 2 }}/></AreaChart></ResponsiveContainer></section>}
-    <section className="panel ai-result-chart" aria-label="AI 탐지 결과 그래프"><div className="panel-heading"><div><p className="section-kicker">AI RESULT DISTRIBUTION</p><h3>클래스별 탐지 결과</h3><small>탐지 건수와 모델의 평균 신뢰도를 함께 비교합니다.</small></div><div className="ai-result-legend"><span><i/>탐지 건수</span><span><i/>평균 신뢰도</span></div></div>{classResultGraph.length ? <div className="ai-result-graph"><header><span>탐지 클래스</span><span>탐지 건수</span><span>평균 신뢰도</span></header>{classResultGraph.map((stat, index) => { const confidence = Math.round(stat.avg_confidence * 100); return <article key={stat.class_id}><div className="ai-result-class"><em>{String(index + 1).padStart(2, "0")}</em><strong>{stat.class_name}</strong>{index === 0 && <span>최다 탐지</span>}</div><div className="ai-result-bar count"><i><span style={{ width: `${Math.max(4, stat.count / maxClassDetections * 100)}%` }}/></i><b>{stat.count.toLocaleString()}건</b></div><div className="ai-result-bar confidence"><i><span style={{ width: `${confidence}%` }}/></i><b>{confidence}%</b></div></article>; })}</div> : <div className="ai-result-empty"><ScanLine size={23}/><span>그래프로 표시할 탐지 결과가 없습니다.</span></div>}<footer><AlertCircle size={14}/><span>신뢰도는 모델의 예측 확신 수준이며 실제 정확도와는 다릅니다. 라벨 없는 미디어이므로 mAP, Precision, Recall은 제공되지 않습니다.</span></footer></section>
   </div>;
+}
+
+function ModelBatchComparison({ items }: { items: Analysis[] }) {
+  const slots = ["yolov8s", "yolov11s", "yolov26s", "rt-detr"] as const;
+  return <section className="records-model-comparison explorer-bottom-comparison inline-comparison-graph" aria-label="네 모델 분석 결과 비교"><div className="explorer-section-heading"><div><span>MODEL COMPARISON</span><h3>네 모델 결과 비교</h3></div><BarChart3 size={18}/></div>{(["total", "confidence", "fps"] as const).map((metric) => { const label = { total: "총 탐지 수", confidence: "평균 신뢰도", fps: "처리 속도" }[metric], values = items.map((result) => metric === "total" ? result.total_detections : metric === "confidence" ? (result.avg_confidence ?? 0) * 100 : result.processing_fps ?? 0), max = metric === "confidence" ? 100 : Math.max(1, ...values); return <div className="inline-metric" key={metric}><strong>{label}</strong>{slots.map((key) => { const result = items.find((analysis) => analysis.model.model_key === key), value = result ? metric === "total" ? result.total_detections : metric === "confidence" ? (result.avg_confidence ?? 0) * 100 : result.processing_fps ?? 0 : 0; return <div className={`metric-model-${key}`} key={key}><span>{key}</span><i><b style={{ width: `${value / max * 100}%` }}/></i><em>{result ? `${value.toFixed(metric === "total" ? 0 : 1)}${metric === "total" ? "건" : metric === "confidence" ? "%" : " FPS"}` : "—"}</em></div>; })}</div>; })}</section>;
+}
+
+function ModelClassComparison({ items }: { items: Analysis[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const slots = [{ key: "yolov8s", name: "YOLOv8s" }, { key: "yolov11s", name: "YOLO11s" }, { key: "yolov26s", name: "YOLO26s" }, { key: "rt-detr", name: "RT-DETR" }] as const;
+  const classNames = [...new Set(items.flatMap((analysis) => (analysis.class_stats ?? []).map((stat) => stat.class_name)))];
+  const rows = classNames.map((className) => ({ className, total: items.reduce((sum, analysis) => sum + ((analysis.class_stats ?? []).find((stat) => stat.class_name === className)?.count ?? 0), 0) })).sort((a, b) => b.total - a.total);
+  const visibleRows = expanded ? rows : rows.slice(0, 2);
+  const maxCount = Math.max(1, ...items.flatMap((analysis) => (analysis.class_stats ?? []).map((stat) => stat.count)));
+  const toggleExpanded = () => {
+    if (!expanded) { setExpanded(true); return; }
+    setExpanded(false);
+    window.requestAnimationFrame(() => toggleRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  };
+  return <section className="panel model-class-comparison" aria-label="모델별 클래스 탐지 비교"><div className="panel-heading"><div><p className="section-kicker">CLASS COMPARISON</p><h3>모델별 클래스 탐지 비교</h3><small>같은 탐지 클래스에 대한 네 모델의 탐지 건수와 평균 신뢰도를 비교합니다.</small></div><strong className="model-class-total">총 {rows.length}개 클래스</strong></div>{rows.length ? <><div className="model-class-list">{visibleRows.map((row, index) => <article key={row.className}><header><em>{String(index + 1).padStart(2, "0")}</em><strong>{row.className}</strong></header><div>{slots.map((slot) => { const analysis = items.find((candidate) => candidate.model.model_key === slot.key), stat = (analysis?.class_stats ?? []).find((candidate) => candidate.class_name === row.className); return <div className={`model-class-model-row metric-model-${slot.key}`} key={slot.key}><span>{slot.name}</span><i><b style={{ width: `${stat ? stat.count / maxCount * 100 : 0}%` }}/></i><em>{stat ? `${stat.count.toLocaleString()}건 · ${Math.round(stat.avg_confidence * 100)}%` : "—"}</em></div>; })}</div></article>)}</div>{rows.length > 2 && <button ref={toggleRef} className={`model-class-toggle ${expanded ? "expanded" : ""}`} type="button" onClick={toggleExpanded}><ChevronDown size={15}/>{expanded ? "접기" : "펼치기"}</button>}</> : <div className="ai-result-empty"><ScanLine size={23}/><span>비교할 클래스 탐지 결과가 없습니다.</span></div>}<footer><AlertCircle size={14}/><span>신뢰도는 모델의 예측 확신 수준이며 실제 정확도와는 다릅니다. 미등록 모델은 비교에서 제외됩니다.</span></footer></section>;
 }
 
 function LocationPreviewDialog({ latitude, longitude, address, description, onClose }: { latitude: number; longitude: number; address: string | null; description: string | null; onClose: () => void }) {

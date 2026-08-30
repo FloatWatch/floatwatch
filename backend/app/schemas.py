@@ -35,6 +35,12 @@ class AnalysisCreate(BaseModel):
     frame_stride: int = Field(default=1, ge=1, le=30)
 
 
+class AnalysisBatchCreate(BaseModel):
+    video_id: int
+    confidence: float = Field(default=0.25, ge=0.05, le=0.95)
+    frame_stride: int = Field(default=1, ge=1, le=30)
+
+
 class RealtimeSessionCreate(BaseModel):
     model_id: int
     latitude: float | None = Field(default=None, ge=32.8, le=38.7)

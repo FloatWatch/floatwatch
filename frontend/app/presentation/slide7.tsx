@@ -5,14 +5,14 @@ import styles from './presentation.module.css';
 
 const models = [
   {
-    id: 'yolov8m', name: 'YOLOv8m', epochs: '87', map50: '90.3%', map95: '67.8%', precision: '88.7%', recall: '84.7%',
+    id: 'yolov8s', name: 'YOLOv8s', epochs: '87', map50: '90.3%', map95: '67.8%', precision: '88.7%', recall: '84.7%',
     charts: [
       { title: 'Precision–Recall Curve', src: '/presentation/ai-report/yolov8m-pr.png' },
       { title: 'F1–Confidence Curve', src: '/presentation/ai-report/yolov8m-f1.png' },
     ],
   },
   {
-    id: 'yolov11s', name: 'YOLOv11s', epochs: '108', map50: '90.4%', map95: '74.6%', precision: '87.2%', recall: '84.1%',
+    id: 'yolov11s', name: 'YOLO11s', epochs: '108', map50: '90.4%', map95: '74.6%', precision: '87.2%', recall: '84.1%',
     charts: [
       { title: 'Precision–Recall Curve', src: '/presentation/ai-report/yolov11s-pr.png' },
       { title: 'F1–Confidence Curve', src: '/presentation/ai-report/yolov11s-f1.png' },
@@ -33,7 +33,7 @@ const analysisComparisonsByModel = {
       inference: { title: '추론 사진', src: '/presentation/ai-report/yolov11s-example-02-inference.jpg' },
     },
   ],
-  yolov8m: [
+  yolov8s: [
     {
       example: '예시 01',
       label: { title: '라벨링 사진', src: '/presentation/ai-report/yolov8m-example-03-label.jpg' },
@@ -60,8 +60,8 @@ export default function Slide7() {
     setComparisonIndex(0);
   };
 
-  const selectedComparisons = selectedModel?.id === 'yolov8m'
-    ? analysisComparisonsByModel.yolov8m
+  const selectedComparisons = selectedModel?.id === 'yolov8s'
+    ? analysisComparisonsByModel.yolov8s
     : analysisComparisonsByModel.yolov11s;
 
   return (
@@ -79,7 +79,7 @@ export default function Slide7() {
                 <div>
                   <div style={{ color: '#496b82', fontSize: 13, fontWeight: 900, letterSpacing: 1.2 }}>OBJECT DETECTION · {model.epochs} EPOCHS</div>
                   <h2 style={{ margin: '5px 0 0', color: '#142f3d', fontSize: 31 }}>{model.name}</h2>
-                  <span style={{ display: 'block', marginTop: 3, color: '#60777b', fontSize: 14, fontWeight: 800 }}>Pretrained Model Fine-tuning</span>
+                  <span style={{ display: 'block', marginTop: 3, color: '#60777b', fontSize: 14, fontWeight: 800 }}>Independent Model Training</span>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '48px 48px', gap: 7 }}>
                   <button data-nav="true" type="button" onClick={(event) => { event.stopPropagation(); openReport(model, 'charts'); }} aria-label={`${model.name} 평가 그래프 열기`} style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: '1px solid #aebfc6', borderRadius: 12, background: '#fff', color: '#315d76', cursor: 'pointer', boxShadow: '0 7px 16px rgba(39,66,80,0.1)' }}>
@@ -164,7 +164,7 @@ export default function Slide7() {
         </div>
       )}
 
-      <div className={styles.pageNumber}>9</div>
+      <div className={styles.pageNumber}>10</div>
     </div>
   );
 }

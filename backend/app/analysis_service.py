@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
+import numpy as np
 from sqlalchemy import delete
 
 from .database import STORAGE_DIR, SessionLocal
@@ -20,14 +21,17 @@ from .models import Analysis, ClassStat, FrameMetric
 from .storage_security import ensure_within_storage, storage_path
 
 NET_MIN_CONFIDENCE = 0.60
-TEMPORAL_MIN_CONSECUTIVE_FRAMES = 3
-TEMPORAL_IOU_THRESHOLD = 0.25
+TEMPORAL_MIN_CONSECUTIVE_FRAMES = 2
+TEMPORAL_IOU_THRESHOLD = 0.18
+TRACKING_MAX_MISSED_PROCESSED_FRAMES = 5
 DEFAULT_VIDEO_FPS = 30.0
 MIN_REASONABLE_FPS = 0.1
 MAX_REASONABLE_FPS = 240.0
 MAX_REASONABLE_FRAME_COUNT = 100_000_000
 MAX_ANALYSIS_RUNTIME_SECONDS = int(os.getenv("MAX_ANALYSIS_RUNTIME_SECONDS", "3600"))
 MAX_ANALYSIS_PROCESSED_FRAMES = int(os.getenv("MAX_ANALYSIS_PROCESSED_FRAMES", "50000"))
+TRACKING_MIN_FEATURES = 3
+TRACKING_MAX_FEATURES_PER_BOX = 24
 INFERENCE_DEVICE = os.getenv("INFERENCE_DEVICE", "cpu").strip().lower() or "cpu"
 if INFERENCE_DEVICE != "cpu" and not re.fullmatch(r"cuda(?::\d+)?", INFERENCE_DEVICE):
     raise RuntimeError("INFERENCE_DEVICE must be 'cpu', 'cuda', or 'cuda:<index>'")
@@ -178,6 +182,106 @@ class TemporalDetectionFilter:
                 kept_indices.append(result_index)
         self.previous = current
         return kept_indices
+
+
+class OpticalFlowBoxTracker:
+    """Track accepted detection boxes across frames skipped by inference."""
+
+    def __init__(self) -> None:
+        self.previous_gray: np.ndarray | None = None
+        self.detections: list[dict] = []
+
+    def reset(self, frame: np.ndarray, detections: list[dict]) -> None:
+        self.previous_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        self.detections = [{**item, "missed_frames": int(item.get("missed_frames", 0))} for item in detections]
+
+    def reconcile(self, frame: np.ndarray, detections: list[dict]) -> list[dict]:
+        """Merge fresh detections with short-lived tracked boxes to avoid display flicker."""
+        previous = self.update(frame)
+        matched_previous: set[int] = set()
+        merged: list[dict] = []
+
+        for detection in detections:
+            best_index = -1
+            best_overlap = TEMPORAL_IOU_THRESHOLD
+            for previous_index, tracked in enumerate(previous):
+                if previous_index in matched_previous or int(tracked["class_id"]) != int(detection["class_id"]):
+                    continue
+                overlap = box_iou(tuple(tracked["box"]), tuple(detection["box"]))
+                if overlap >= best_overlap:
+                    best_index = previous_index
+                    best_overlap = overlap
+            if best_index >= 0:
+                matched_previous.add(best_index)
+            merged.append({**detection, "missed_frames": 0})
+
+        for previous_index, tracked in enumerate(previous):
+            if previous_index in matched_previous:
+                continue
+            missed_frames = int(tracked.get("missed_frames", 0)) + 1
+            if missed_frames <= TRACKING_MAX_MISSED_PROCESSED_FRAMES:
+                merged.append({**tracked, "missed_frames": missed_frames})
+
+        self.detections = merged
+        return [dict(item) for item in merged]
+
+    def update(self, frame: np.ndarray) -> list[dict]:
+        current_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if self.previous_gray is None or not self.detections:
+            self.previous_gray = current_gray
+            return [dict(item) for item in self.detections]
+
+        height, width = current_gray.shape[:2]
+        tracked: list[dict] = []
+        for item in self.detections:
+            x1, y1, x2, y2 = item["box"]
+            left = max(0, min(width - 1, int(math.floor(x1))))
+            top = max(0, min(height - 1, int(math.floor(y1))))
+            right = max(left + 1, min(width, int(math.ceil(x2))))
+            bottom = max(top + 1, min(height, int(math.ceil(y2))))
+            mask = np.zeros_like(self.previous_gray)
+            mask[top:bottom, left:right] = 255
+            points = cv2.goodFeaturesToTrack(
+                self.previous_gray,
+                maxCorners=TRACKING_MAX_FEATURES_PER_BOX,
+                qualityLevel=0.01,
+                minDistance=4,
+                mask=mask,
+            )
+            dx = dy = 0.0
+            if points is not None and len(points) >= TRACKING_MIN_FEATURES:
+                moved, status, _errors = cv2.calcOpticalFlowPyrLK(self.previous_gray, current_gray, points, None)
+                if moved is not None and status is not None:
+                    valid = status.reshape(-1) == 1
+                    if int(valid.sum()) >= TRACKING_MIN_FEATURES:
+                        displacement = moved.reshape(-1, 2)[valid] - points.reshape(-1, 2)[valid]
+                        dx, dy = (float(value) for value in np.median(displacement, axis=0))
+            box_width = max(1.0, x2 - x1)
+            box_height = max(1.0, y2 - y1)
+            next_x1 = min(max(0.0, x1 + dx), max(0.0, width - box_width))
+            next_y1 = min(max(0.0, y1 + dy), max(0.0, height - box_height))
+            tracked.append({**item, "box": (next_x1, next_y1, next_x1 + box_width, next_y1 + box_height)})
+
+        self.previous_gray = current_gray
+        self.detections = tracked
+        return [dict(item) for item in tracked]
+
+
+def draw_tracked_boxes(frame: np.ndarray, detections: list[dict], names: dict[int, str]) -> np.ndarray:
+    """Render tracked boxes on an unprocessed frame without affecting metrics."""
+    annotated = frame.copy()
+    for item in detections:
+        x1, y1, x2, y2 = (int(round(value)) for value in item["box"])
+        class_id = int(item["class_id"])
+        confidence = float(item["confidence"])
+        color = (74, 211, 199)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+        label = f"{names.get(class_id, class_id)} {confidence:.2f}"
+        (label_width, label_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        label_top = max(0, y1 - label_height - baseline - 6)
+        cv2.rectangle(annotated, (x1, label_top), (x1 + label_width + 8, y1), color, -1)
+        cv2.putText(annotated, label, (x1 + 4, max(label_height + 2, y1 - baseline - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (8, 32, 35), 1, cv2.LINE_AA)
+    return annotated
 
 
 def filter_result(result, indices: list[int]):
@@ -467,9 +571,9 @@ def run_analysis(analysis_id: int) -> None:
         detection_total = 0
         processed = 0
         frame_number = 0
-        last_annotated = None
         started = time.perf_counter()
         temporal_filter = TemporalDetectionFilter()
+        box_tracker = OpticalFlowBoxTracker()
         pending_frame_metrics: list[dict] = []
 
         while True:
@@ -494,11 +598,19 @@ def run_analysis(analysis_id: int) -> None:
                 ]
                 persistent_indices = temporal_filter.update(candidates)
                 result = filter_result(result, persistent_indices)
-                annotated = result.plot()
-                last_annotated = annotated
                 boxes = result.boxes
                 frame_confidences = boxes.conf.cpu().tolist() if boxes is not None else []
                 class_ids = [int(value) for value in boxes.cls.cpu().tolist()] if boxes is not None else []
+                coordinates = boxes.xyxy.cpu().tolist() if boxes is not None else []
+                display_detections = box_tracker.reconcile(frame, [
+                    {
+                        "class_id": class_id,
+                        "confidence": confidence,
+                        "box": tuple(float(value) for value in box),
+                    }
+                    for class_id, confidence, box in zip(class_ids, frame_confidences, coordinates)
+                ])
+                annotated = draw_tracked_boxes(frame, display_detections, names)
                 for class_id, confidence in zip(class_ids, frame_confidences):
                     class_confidences[class_id].append(confidence)
                 count = len(frame_confidences)
@@ -513,7 +625,7 @@ def run_analysis(analysis_id: int) -> None:
                     "has_masks": result.masks is not None,
                 })
             else:
-                annotated = frame if last_annotated is None else frame
+                annotated = draw_tracked_boxes(frame, box_tracker.update(frame), names)
 
             writer.write(annotated)
             frame_number += 1

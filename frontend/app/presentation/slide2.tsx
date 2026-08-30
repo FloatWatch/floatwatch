@@ -1,14 +1,14 @@
 import styles from './presentation.module.css';
 
 const sections = [
-  { no: '01', title: '목차', en: 'Contents' },
-  { no: '02', title: '조원 소개', en: 'Team' },
-  { no: '03', title: '프로젝트 일정', en: 'Timeline' },
-  { no: '04', title: '프로젝트 개요', en: 'Overview' },
-  { no: '05', title: '수요조사', en: 'Research' },
-  { no: '06', title: '기술 스택', second: '아키텍처', en: 'Architecture' },
-  { no: '07', title: '기능 소개', en: 'Features' },
-  { no: '08', title: 'AI 모델 리포트', en: 'AI Report' },
+  { no: '01', title: '조원 소개', en: 'Team' },
+  { no: '02', title: '프로젝트 일정', en: 'Timeline' },
+  { no: '03', title: '프로젝트 개요', en: 'Overview' },
+  { no: '04', title: '수요조사', en: 'Research' },
+  { no: '05', title: '기술 스택', second: '아키텍처', en: 'Architecture' },
+  { no: '06', title: '기능 소개', en: 'Features' },
+  { no: '07', title: 'AI 모델 리포트', en: 'AI Report' },
+  { no: '08', title: '시연 영상', en: 'Demo Video' },
   { no: '09', title: '향후 확장 계획', en: 'Next Step' },
 ];
 
@@ -73,7 +73,7 @@ export default function Slide2() {
                 <div style={{ color: '#276c68', fontFamily: "'Gangwon Edu Modu', monospace", fontSize: 29, fontWeight: 800 }}>
                   {section.no}
                 </div>
-                <span style={{ width: 28, height: 2, background: '#9ab8b5' }} />
+                <span style={{ width: 28, height: 2, background: '#e56b3f' }} />
               </div>
               <div>
                 <div style={{ color: '#102e30', fontSize: section.second ? 22 : 24, fontWeight: 800, lineHeight: 1.22, letterSpacing: '-0.4px' }}>

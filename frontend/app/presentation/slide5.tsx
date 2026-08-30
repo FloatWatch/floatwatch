@@ -7,7 +7,7 @@ const layers = [
     label: 'CLIENT',
     title: 'Frontend',
     stack: 'Next.js · TypeScript',
-    desc: '서비스 화면과 분석 결과 시각화',
+    desc: '서비스 화면과 모델별 결과 시각화',
     icon: <IconTriangle size={28} />,
   },
   {
@@ -15,7 +15,7 @@ const layers = [
     label: 'APPLICATION',
     title: 'Backend API',
     stack: 'FastAPI · SQLAlchemy',
-    desc: '인증·업로드·분석 요청 처리',
+    desc: '인증·분석 자산·4개 모델 분석 묶음 처리',
     icon: <IconBolt size={28} />,
   },
   {
@@ -23,7 +23,7 @@ const layers = [
     label: 'AI ENGINE',
     title: 'Inference',
     stack: 'Ultralytics · OpenCV',
-    desc: 'YOLO 추론과 결과 영상 생성',
+    desc: '4개 대표 모델 추론·바운딩 박스 생성',
     icon: <IconScan size={28} />,
   },
   {
@@ -31,16 +31,16 @@ const layers = [
     label: 'DATA',
     title: 'Storage',
     stack: 'SQLite · File Storage',
-    desc: '사용자·모델·미디어·분석 기록',
+    desc: '계정·대표 PT·미디어·분석 결과 저장',
     icon: <IconDatabase size={28} />,
   },
 ];
 
 const pipeline = [
-  ['UPLOAD', '모델·영상 등록'],
-  ['VALIDATE', '형식·크기 검증'],
-  ['INFERENCE', '프레임별 AI 추론'],
-  ['RECORD', '결과·지표 저장'],
+  ['PREPARE', '대표 PT·미디어 준비'],
+  ['VALIDATE', '모델·미디어 검증'],
+  ['INFERENCE', '등록 모델 순차 추론'],
+  ['RECORD', '모델별 결과·지표 저장'],
 ];
 
 export default function Slide5() {
@@ -94,7 +94,7 @@ export default function Slide5() {
         </section>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginTop: 13, color: '#354f52', fontSize: 15, fontWeight: 750 }}>
-          <IconFolder size={19} /> 파일 스토리지에는 모델·미디어를, SQLite에는 사용자·분석 지표를 분리해 저장합니다.
+          <IconFolder size={19} /> 파일 스토리지에는 모델·미디어·결과 파일을, SQLite에는 계정·대표 PT·분석 묶음과 지표를 저장합니다.
         </div>
       </div>
       <div className={styles.pageNumber}>7</div>

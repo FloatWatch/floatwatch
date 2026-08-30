@@ -24,7 +24,10 @@ export function RealtimeDetection({ models, onManageModels }: { models:ModelArti
   const [location,setLocation]=useState<RealtimeLocation|null>(null),[locationOpen,setLocationOpen]=useState(false);
   const selectedModel=useMemo(()=>models.find(model=>String(model.id)===selectedModelId),[models,selectedModelId]);
 
-  useEffect(()=>{if(!selectedModelId&&models[0])setSelectedModelId(String(models[0].id));},[models,selectedModelId]);
+  useEffect(()=>{
+    if(!models.length){if(selectedModelId)setSelectedModelId("");return}
+    if(!selectedModelId||!models.some(model=>String(model.id)===selectedModelId))setSelectedModelId(String(models[0].id));
+  },[models,selectedModelId]);
   useEffect(()=>{if(!pickerOpen)return;const close=(event:MouseEvent)=>{if(!pickerRef.current?.contains(event.target as Node))setPickerOpen(false)};const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setPickerOpen(false)};document.addEventListener("mousedown",close);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("mousedown",close);document.removeEventListener("keydown",escape)}},[pickerOpen]);
   useEffect(()=>{if(sessionState!=="running")return;const timer=window.setInterval(()=>setElapsedSeconds(value=>value+1),1000);return()=>window.clearInterval(timer)},[sessionState]);
   useEffect(()=>()=>{streamRef.current?.getTracks().forEach(track=>track.stop());const id=sessionIdRef.current;if(id)api(`/realtime/sessions/${id}`,{method:"PATCH",body:JSON.stringify({status:"completed"})}).catch(()=>undefined)},[]);

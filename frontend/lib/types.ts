@@ -52,6 +52,8 @@ export type AuditLog = {
 export type ModelArtifact = {
   id: number;
   name: string;
+  model_key: "yolov8s" | "yolov11s" | "yolov26s" | "rt-detr" | null;
+  is_representative: boolean;
   original_name: string;
   size_bytes: number;
   task: string | null;
@@ -95,6 +97,7 @@ export type FrameMetric = {
 
 export type Analysis = {
   id: number;
+  batch_id: string | null;
   status: "queued" | "processing" | "completed" | "failed" | "cancelled";
   confidence: number;
   frame_stride: number;
