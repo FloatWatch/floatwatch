@@ -11,7 +11,6 @@ services:
     volumes:
       - backend-data:/app/data
       - backend-storage:/app/storage
-      - ./AI_Model:/app/AI_Model
     expose:
       - "8000"
 
