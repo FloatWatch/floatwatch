@@ -1,8 +1,0 @@
-services:
-  backend:
-    build:
-      args:
-        PYTORCH_INDEX_URL: https://download.pytorch.org/whl/cu128
-    environment:
-      INFERENCE_DEVICE: cuda:0
-    gpus: all

@@ -1,3 +1,0 @@
-http://{$TLS_HOST} {
-	reverse_proxy frontend:3000
-}
