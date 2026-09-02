@@ -3,6 +3,9 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
       DATABASE_URL: sqlite:////app/data/app.db
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
