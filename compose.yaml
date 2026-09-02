@@ -1,0 +1,36 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: sqlite:////app/data/app.db
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
+      INFERENCE_DEVICE: ${INFERENCE_DEVICE:-cpu}
+      ANALYSIS_WORKERS: ${ANALYSIS_WORKERS:-4}
+    volumes:
+      - backend-data:/app/data
+      - backend-storage:/app/storage
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        API_INTERNAL_URL: http://backend:8000
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://backend:8000
+    depends_on:
+      - backend
+    ports:
+      - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3001}:3000"
+
+volumes:
+  backend-data:
+  backend-storage:
+  
