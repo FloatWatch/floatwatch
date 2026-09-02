@@ -444,7 +444,7 @@ export function AuthScreen({
             <div className="auth-copy page-content-transition">
               <h1>AI가 읽어내는 바다</h1>
               <div className="auth-copy-description">
-                <p>드론과 CCTV 영상 속 부유물을 감지해 종류와 위치, 위험도를 실시간으로 분류합니다.</p>
+                <p>드론과 CCTV 영상 속 부유물을 감지해 종류와 위치,<br />위험도를 실시간으로 분류합니다.</p>
                 <p>필요한 구간을 빠르게 파악하고 효율적인 수거 동선으로 연결합니다.</p>
               </div>
               <div className="auth-visual-actions">
