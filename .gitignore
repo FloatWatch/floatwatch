@@ -266,3 +266,6 @@ tools/
 
 # 정리 텍스트 파일
 정리.txt
+
+#
+frontend/next-env.d.ts

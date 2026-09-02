@@ -1,0 +1,44 @@
+# 개발용 오버레이 (hot reload)
+services:
+  backend:
+    environment:
+      FRONTEND_ORIGIN: ${DEV_FRONTEND_ORIGIN:-http://localhost:3002}
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/app
+    volumes:
+      - ./backend/app:/app/app
+    ports:
+      - "127.0.0.1:${DEV_API_PORT:-8001}:8000"
+
+  frontend:
+    build:
+      target: dev
+    environment:
+      API_INTERNAL_URL: http://backend:8000
+      # Windows bind mount 파일 감시
+      WATCHPACK_POLLING: "true"
+    command:
+      - npm
+      - run
+      - dev
+      - --
+      - --hostname
+      - 0.0.0.0
+      - --port
+      - "3000"
+      - --webpack
+    volumes:
+      - ./frontend:/app
+      # 이미지 내부 유지
+      - /app/node_modules
+      - /app/.next
+    ports: !override
+      - "${DEV_BIND_ADDRESS:-127.0.0.1}:${DEV_PORT:-3002}:3000"
