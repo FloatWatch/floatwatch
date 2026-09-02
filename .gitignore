@@ -263,3 +263,6 @@ AGENTS.md
 # Local deployment helpers, browser state and downloaded binaries
 deploy/
 tools/
+
+# 정리 텍스트 파일
+정리.txt
