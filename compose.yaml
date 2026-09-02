@@ -11,6 +11,23 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3001}
       INFERENCE_DEVICE: ${INFERENCE_DEVICE:-cpu}
       ANALYSIS_WORKERS: ${ANALYSIS_WORKERS:-4}
+
+      APP_SECRET: ${APP_SECRET}
+
+      OAUTH_SUCCESS_REDIRECT: ${OAUTH_SUCCESS_REDIRECT}
+      OAUTH_ERROR_REDIRECT: ${OAUTH_ERROR_REDIRECT}
+
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+
+      NAVER_CLIENT_ID: ${NAVER_CLIENT_ID}
+      NAVER_CLIENT_SECRET: ${NAVER_CLIENT_SECRET}
+      NAVER_REDIRECT_URI: ${NAVER_REDIRECT_URI}
+
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI}
     volumes:
       - backend-data:/app/data
       - backend-storage:/app/storage
@@ -30,6 +47,19 @@ services:
     ports:
       - "${APP_BIND_ADDRESS:-0.0.0.0}:${APP_PORT:-3001}:3000"
 
+  sqlite-web:
+    image: ghcr.io/coleifer/sqlite-web:latest
+    container_name: floatwatch-sqlite-web
+    restart: unless-stopped
+    command:
+      - app.db
+      - --read-only
+    volumes:
+      - backend-data:/data:ro
+    ports:
+      - "192.168.0.101:8080:8080"
+
 volumes:
   backend-data:
   backend-storage:
+  
