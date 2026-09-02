@@ -57,7 +57,7 @@ services:
     volumes:
       - backend-data:/data:ro
     ports:
-      - "${SQLITE_WEB_BIND:-127.0.0.1}:${SQLITE_WEB_PORT:-8080}:8080"
+      - "192.168.0.101:8080:8080"
 
 volumes:
   backend-data:
