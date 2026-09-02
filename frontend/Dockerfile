@@ -3,6 +3,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# 개발용 스테이지 (hot reload)
+FROM node:22-alpine AS dev
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    NODE_ENV=development
+COPY --from=dependencies /app/node_modules ./node_modules
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+
 FROM node:22-alpine AS builder
 WORKDIR /app
 ARG API_INTERNAL_URL=http://backend:8000

@@ -1159,7 +1159,7 @@ input:focus, select:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgb
 .ocean-board-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 48px; }
 .ocean-board-heading > div:first-child > span { color: #007886; font-size: 11px; font-weight: 800; }
 .ocean-board-heading h2 { margin: 8px 0 8px; font-size: 42px; line-height: 1.15; font-weight: 700; }
-.ocean-board-heading p { margin: 0; color: #315b59; font-size: 14px; line-height: 1.65; font-weight: 560; }
+.ocean-board-heading p { margin: 1em 0 0; color: #315b59; font-size: 14px; line-height: 1.65; font-weight: 560; }
 .ocean-board-status {
   min-width: 142px;
   display: flex;
