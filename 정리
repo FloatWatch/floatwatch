@@ -1,0 +1,11 @@
+# 서버 주소
+http://mbc-sw.iptime.org:3203/auth
+
+git add .
+git commit -m "260901-1 정리파일 추가 및 DB 웹 연동 추가 진행중"
+git push origin lsy
+
+1. 폴더
+<DB>
+/workspaces/floatwatch/floatwatch/backend/app/models.py
+
